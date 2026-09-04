@@ -47,6 +47,41 @@
     flex-direction: column;
   }
 
+  /* ===== LANGUAGE SWITCH ===== */
+  .lang-switch {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    display: inline-flex;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 2px;
+    z-index: 10;
+  }
+
+  .lang-switch button {
+    font-family: var(--font);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+
+  .lang-switch button:hover { color: var(--text); }
+
+  .lang-switch button.active {
+    color: var(--text);
+    background: var(--accent);
+  }
+
   /* ===== HERO ===== */
   .hero {
     flex: 1;
@@ -102,6 +137,7 @@
     padding: 10px 22px;
     font-size: 0.9rem;
     color: var(--text-dim);
+    margin-bottom: 28px;
   }
 
   .status-dot {
@@ -115,6 +151,29 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.45; transform: scale(0.8); }
+  }
+
+  /* ===== NOTIFY BUTTON ===== */
+  .notify-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--accent);
+    color: #ffffff;
+    font-family: var(--font);
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px 32px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+
+  .notify-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
   }
 
   /* ===== FEATURES ===== */
@@ -198,6 +257,12 @@
 <body>
 
 <main class="hero">
+
+  <div class="lang-switch" role="group" aria-label="Language">
+    <button type="button" id="lang-en" onclick="setLang('en')">EN</button>
+    <button type="button" id="lang-el" onclick="setLang('el')">ΕΛ</button>
+  </div>
+
   <svg class="logo" viewBox="0 0 64 64" width="88" height="88" role="img" aria-label="Waymark logo">
     <circle cx="32" cy="32" r="30" fill="#6d4aff"/>
     <path d="M32 14 C24 14 18 20 18 28 C18 38 32 52 32 52 C32 52 46 38 46 28 C46 20 40 14 32 14 Z" fill="none" stroke="white" stroke-width="3" stroke-linejoin="round"/>
@@ -206,43 +271,143 @@
 
   <h1>Waymark</h1>
 
-  <p class="tagline">An advanced OpenStreetMap viewer &amp; editor — built for discovering places and shaping the map.</p>
+  <p class="tagline" data-i18n="tagline"></p>
 
   <div class="status-badge" role="status">
     <span class="status-dot" aria-hidden="true"></span>
-    Under development · Coming soon
+    <span data-i18n="status"></span>
   </div>
+
+  <a class="notify-btn" id="notify-btn"
+     href="https://preview.mailerlite.io/forms/642133/197676752405792010/share"
+     target="_blank" rel="noopener" data-i18n-label="notify" data-i18n="notify"></a>
+
 </main>
 
 <section class="features">
-  <h2>What to expect</h2>
+  <h2 data-i18n="featuresTitle"></h2>
   <div class="feature-grid">
     <div class="feature-card">
-      <h3>Advanced Map Viewing</h3>
-      <p>Fast, fluid browsing of OpenStreetMap data with rich detail and smart search.</p>
+      <h3 data-i18n="f1Title"></h3>
+      <p data-i18n="f1Text"></p>
     </div>
     <div class="feature-card">
-      <h3>Full Editing Power</h3>
-      <p>Create, modify and refine map features — directly from your browser.</p>
+      <h3 data-i18n="f2Title"></h3>
+      <p data-i18n="f2Text"></p>
     </div>
     <div class="feature-card">
-      <h3>Open by Design</h3>
-      <p>Built on OpenStreetMap and open-source values. Your map data stays free and open.</p>
+      <h3 data-i18n="f3Title"></h3>
+      <p data-i18n="f3Text"></p>
     </div>
     <div class="feature-card">
-      <h3>Privacy First</h3>
-      <p>No cookies, no trackers, no ads. Just maps.</p>
+      <h3 data-i18n="f4Title"></h3>
+      <p data-i18n="f4Text"></p>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="links">
-    Designed by: <a href="https://koulaxizis.gr" target="_blank" rel="noopener">koulaxizis.gr</a>
-    <a href="https://github.com/koulaxizis/waymark" target="_blank" rel="noopener">GitHub repo</a>
+    <span data-i18n="designedBy"></span>
+    <a href="https://koulaxizis.gr" target="_blank" rel="noopener">koulaxizis.gr</a>
+    <a href="https://github.com/koulaxizis/waymark" target="_blank" rel="noopener" data-i18n="githubRepo"></a>
   </div>
-  <p class="meta">© 2026 Waymark · No cookies · No tracking · No ads</p>
+  <p class="meta" data-i18n="meta"></p>
 </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var MAILERLITE_URL = "https://preview.mailerlite.io/forms/642133/197676752405792010/share";
+
+  var I18N = {
+    en: {
+      _title: "Waymark — OSM Viewer & Editor",
+      _lang: "en",
+      tagline: "An advanced OpenStreetMap viewer & editor — built for discovering places and shaping the map.",
+      status: "Under development · Coming soon",
+      notify: "✉ Notify me when it launches",
+      _notifyLabel: "Notify me when Waymark launches (opens signup form in a new tab)",
+      featuresTitle: "What to expect",
+      f1Title: "Advanced Map Viewing",
+      f1Text: "Fast, fluid browsing of OpenStreetMap data with rich detail and smart search.",
+      f2Title: "Full Editing Power",
+      f2Text: "Create, modify and refine map features — directly from your browser.",
+      f3Title: "Open by Design",
+      f3Text: "Built on OpenStreetMap and open-source values. Your map data stays free and open.",
+      f4Title: "Privacy First",
+      f4Text: "No cookies, no trackers, no ads. Just maps.",
+      designedBy: "Designed by:",
+      githubRepo: "GitHub repo",
+      meta: "© 2026 Waymark · No cookies · No tracking · No ads"
+    },
+    el: {
+      _title: "Waymark — Προβολή & Επεξεργασία OSM",
+      _lang: "el",
+      tagline: "Ένας προηγμένος viewer & editor του OpenStreetMap — φτιαγμένος για να ανακαλύπτεις τόπους και να διαμορφώνεις τον χάρτη.",
+      status: "Υπό ανάπτυξη · Σύντομα κοντά σας",
+      notify: "✉ Ενημέρωσέ με όταν κυκλοφορήσει",
+      _notifyLabel: "Ενημερωθείτε όταν κυκλοφορήσει το Waymark (ανοίγει φόρμα εγγραφής σε νέα καρτέλα)",
+      featuresTitle: "Τι να περιμένετε",
+      f1Title: "Προηγμένη Προβολή Χάρτη",
+      f1Text: "Γρήγορη, ομαλή περιήγηση στα δεδομένα του OpenStreetMap με πλούσιες λεπτομέρειες και έξυπνη αναζήτηση.",
+      f2Title: "Πλήρης Επεξεργασία",
+      f2Text: "Δημιουργήστε, τροποποιήστε και βελτιώστε στοιχεία του χάρτη — απευθείας από το browser σας.",
+      f3Title: "Ανοιχτό Σχεδιασμό",
+      f3Text: "Βασισμένο στο OpenStreetMap και στις αξίες του open source. Τα δεδομένα του χάρτη παραμένουν ελεύθερα και ανοιχτά.",
+      f4Title: "Ιδιωτικότητα Πρώτα",
+      f4Text: "Χωρίς cookies, χωρίς trackers, χωρίς διαφημίσεις. Απλώς χάρτες.",
+      designedBy: "Σχεδίασε ο:",
+      githubRepo: "Αποθετήριο GitHub",
+      meta: "© 2026 Waymark · Χωρίς cookies · Χωρίς παρακολούθηση · Χωρίς διαφημίσεις"
+    }
+  };
+
+  function applyLang(lang) {
+    if (!I18N[lang]) lang = "en";
+    var dict = I18N[lang];
+
+    document.documentElement.lang = dict._lang;
+    document.title = dict._title;
+
+    var els = document.querySelectorAll("[data-i18n]");
+    for (var i = 0; i < els.length; i++) {
+      var key = els[i].getAttribute("data-i18n");
+      if (dict[key] !== undefined && dict[key] !== "") {
+        els[i].textContent = dict[key];
+      }
+    }
+
+    var notify = document.getElementById("notify-btn");
+    if (notify) notify.setAttribute("aria-label", dict._notifyLabel);
+
+    var btnEn = document.getElementById("lang-en");
+    var btnEl = document.getElementById("lang-el");
+    if (btnEn) btnEn.className = (lang === "en") ? "active" : "";
+    if (btnEl) btnEl.className = (lang === "el") ? "active" : "";
+
+    try {
+      localStorage.setItem("waymark-lang", lang);
+    } catch (e) { /* storage unavailable — ignore */ }
+  }
+
+  window.setLang = applyLang;
+
+  // Keep the subscribe URL centralized (identical for both languages).
+  var notifyBtn = document.getElementById("notify-btn");
+  if (notifyBtn) notifyBtn.href = MAILERLITE_URL;
+
+  // Initial language: saved preference, else auto-detect from browser.
+  var saved = null;
+  try {
+    saved = localStorage.getItem("waymark-lang");
+  } catch (e) { /* ignore */ }
+
+  var initial = saved || ((navigator.language || "").toLowerCase().indexOf("el") === 0 ? "el" : "en");
+  applyLang(initial);
+})();
+</script>
 
 </body>
 </html>
