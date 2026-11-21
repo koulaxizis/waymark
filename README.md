@@ -1,5 +1,9 @@
 # waymarked.site
 
-Static "domain for sale" landing page for waymarked.site (English / Greek), served by GitHub Pages.
+Presentation page for Waymark, a free, open-source (MIT) suite of lightweight tools for sound engineering, AV and conferences. Static site (English / Greek, dark and light theme) served by GitHub Pages.
 
-Contact: koulaxizis@glarolykoi.net
+The page presents the plan only. It has no download or access links until a release exists.
+
+- `index.html`: the presentation page
+- `palette.css`: Waymark palette v1 (pine green, semantic tokens)
+- `spike/pairing/`: throwaway test page for the pairing spike (noindex), not linked from the page
