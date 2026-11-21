@@ -29,6 +29,10 @@ npx wrangler deploy
 npx wrangler secret put ACCESS_KEY
 ```
 
+The Worker refuses every connection until `ACCESS_KEY` is set. You can
+also set or change it later in the Cloudflare dashboard: Workers & Pages,
+waymark-relay, Settings, Variables and Secrets, Add, type Secret.
+
 **Cost.** A Worker with a Durable Object fits the free plan. A waiting
 Controller's socket hibernates and costs nothing. Slide commands are tiny.
 A 100 MB file over the relay is about 1,600 messages, far below the daily

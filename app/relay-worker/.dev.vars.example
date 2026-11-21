@@ -1,2 +1,3 @@
-# The access key the Controller sends; leave empty only for a private test.
+# The access key the Controller sends. The Worker refuses every
+# connection until it is set.
 ACCESS_KEY=

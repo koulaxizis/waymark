@@ -6,7 +6,7 @@
 // Protocol (same as internal/relay in the app and waymark-relay):
 //   GET /r/<room>?s=c   the Controller waits in its room
 //   GET /r/<room>?s=a   an Agent joins the oldest waiting Controller
-//   Authorization: Bearer <ACCESS_KEY>   when the ACCESS_KEY secret is set
+//   Authorization: Bearer <ACCESS_KEY>   (the Worker refuses all until it is set)
 // Binary messages go to the peer; "ping" is answered with "pong". When one
 // side closes, the other is closed. Nothing is stored or logged.
 
@@ -19,10 +19,11 @@ export default {
     const side = url.searchParams.get("s");
     if (!m || (side !== "a" && side !== "c")) return new Response("Waymark relay\n", { status: 404 });
     if (req.headers.get("Upgrade") !== "websocket") return new Response("WebSocket only\n", { status: 426 });
-    if (env.ACCESS_KEY) {
-      const got = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
-      if (!(await same(got, env.ACCESS_KEY))) return new Response("access key needed\n", { status: 401 });
-    }
+    // Closed until the owner sets the ACCESS_KEY secret: a relay without a
+    // key would carry anyone's traffic on the owner's account.
+    if (!env.ACCESS_KEY) return new Response("set the ACCESS_KEY secret first\n", { status: 503 });
+    const got = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
+    if (!(await same(got, env.ACCESS_KEY))) return new Response("access key needed\n", { status: 401 });
     return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(req);
   },
 };
