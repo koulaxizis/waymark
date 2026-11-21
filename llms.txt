@@ -1,21 +1,36 @@
-# waymarked.site
+# Waymark
 
-> The domain name waymarked.site is for sale. Price from 30 EUR. Interested buyers can email koulaxizis@glarolykoi.net.
+> Waymark is a free, open-source (MIT) suite of lightweight tools for sound engineering, AV and conferences, published at waymarked.site. Every tool is portable and runs locally and offline, with no installation, admin rights, accounts or cloud server. Status: in design, no release and no downloads yet.
 
-## Key facts
+## Principles
 
-- Domain: waymarked.site
-- Status: for sale, price from 30 EUR
-- What is sold: the domain name only; no website, content or code is included
-- Contact: koulaxizis@glarolykoi.net (English or Greek)
-- Transfer: payment via a trusted escrow service, then transfer to the buyer's registrar account, usually within a few days
-- Suitable for: maps, hiking and trail guides, travel, navigation apps, outdoor brands, wayfinding projects. A "waymark" is a marker that guides travellers along a route.
+- Portable apps (one file per system) and the web only; no installers, no admin rights, runs from USB
+- Local and offline: devices talk directly over the venue's local network; presentation content never leaves it
+- No cloud server, accounts, cookies, telemetry, ads or paid services
+- MIT licence; built first for real events, then given freely
+- Dark theme by default plus a light theme; Greek and English; 24-hour clock
 
-## More domains for sale by the same owner
+## First tool: Waymark Remote
 
-- [tablogames.online](https://tablogames.online/): domain name only, suited to a games brand
-- [soffitta.site](https://soffitta.site/): domain name only ("soffitta" is Italian for attic)
+A minimal remote tool that connects operator, secretariat and speaker computers over any local network (wired or wireless) to open, check and control presentations and transfer files, without installing anything on the speaker's computer.
+
+- Roles: Secretariat (sends files to rooms, sees status), Operator (opens and runs the presentation from a laptop or Android phone), Overview (watches every room, can take over)
+- Built-in presentation check on the laptop that will play the file (missing fonts, videos, slides that fail, screen ratio); fixes only on a copy
+- Pairing required on the speaker's laptop, visible connection indicator, one-click disconnect, encrypted, stays on the LAN
+
+Release steps (no dates yet):
+- 0.1: presentation control and file transfer (shared folders, drag and drop)
+- 0.2: screen view and Agent Lite (browser-only agent)
+- 0.3: full remote control (mouse, keyboard, live video)
+
+Platforms: Windows (exe), macOS (.app), Linux (AppImage), Android (APK), iPhone/iPad (browser). Unsigned for now.
+
+## Later tools
+
+Time and speakers (timer, stage display, run of show, phone remote, overview), presenting and playout, presentation/PDF/media checks, crew and sound tools, and Waymark Kit (equipment checklists).
 
 ## Ελληνικά
 
-Το domain waymarked.site πωλείται (μόνο το όνομα τομέα, χωρίς περιεχόμενο), με τιμή από 30 ευρώ. Επικοινωνία: koulaxizis@glarolykoi.net
+Το Waymark είναι δωρεάν σειρά εργαλείων ανοιχτού κώδικα (MIT) για ηχοληψία, οπτικοακουστικά και συνέδρια. Portable, τοπικά και offline, χωρίς εγκατάσταση ή cloud. Πρώτο εργαλείο: Waymark Remote. Βρίσκεται σε σχεδιασμό, χωρίς έκδοση ακόμη.
+
+Designed by Christos Koulaxizis.

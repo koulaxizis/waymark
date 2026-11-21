@@ -1,0 +1,79 @@
+/* Waymark palette v1 (2026-11-21). Pine green, dark by default.
+   Brand from #01796F = oklch(0.52 0.091 185). Scales: OKLCH lightness map,
+   hex values gamut-mapped to sRGB. Contrast ratios measured (WCAG 2.2).
+   Layer 1 = primitives, Layer 2 = semantic tokens. Use only Layer 2 in UI. */
+
+:root {
+  /* Brand: pine green, hue 185 */
+  --brand-50: #e2fcf7;  --brand-100: #cef0eb; --brand-200: #b4dfd8; --brand-300: #88c5bd;
+  --brand-400: #5ca89e; --brand-500: #198378; --brand-600: #066c64; --brand-700: #04534c;
+  --brand-800: #013c37; --brand-900: #022522; --brand-950: #00110f;
+
+  /* Neutrals, tinted with the brand hue (chroma 0.012) */
+  --gray-50: #f3f6f5;  --gray-100: #e4e9e8; --gray-200: #d0d5d5; --gray-300: #b2b9b8;
+  --gray-400: #929a99; --gray-500: #6a7472; --gray-600: #56605e; --gray-700: #414a48;
+  --gray-800: #2d3533; --gray-900: #1a2120; --gray-950: #090e0e;
+
+  /* Semantic hues: success 145, warning 75, error 25, info 240 */
+  --success-50: #e3fee3; --success-400: #62ad65; --success-600: #02721c; --success-900: #002804;
+  --warning-50: #fff3e5; --warning-400: #c68b2c; --warning-700: #624001; --warning-900: #2d1b00;
+  --error-50: #fef2f1;   --error-400: #e4706a;   --error-600: #a92227;   --error-900: #420105;
+  --info-50: #edf7fe;    --info-400: #58a0d1;    --info-600: #006495;    --info-900: #012236;
+}
+
+/* Dark theme: the default. Ratios are against --surface (#1a2120) unless noted. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: var(--gray-950);
+  --surface: var(--gray-900);
+  --surface-raised: var(--gray-800);
+  --border: var(--gray-700);            /* decorative dividers */
+  --border-strong: var(--gray-500);     /* inputs, controls: 3.40:1 */
+  --text: var(--gray-50);               /* 15.06:1 (17.87 on --bg) */
+  --text-secondary: var(--gray-300);    /* 8.21:1 */
+  --text-tertiary: var(--gray-400);     /* 5.70:1 */
+  --primary: var(--brand-400);          /* links, accents: 5.89:1, 4.52 on --surface-raised */
+  --primary-hover: var(--brand-300);
+  --on-primary: var(--gray-950);        /* label on --primary: 6.99:1, 9.96 on hover */
+  --focus-ring: var(--brand-300);
+  --success: var(--success-400);        /* 5.99:1 */
+  --warning: var(--warning-400);        /* 5.56:1 */
+  --error: var(--error-400);            /* 5.32:1 */
+  --info: var(--info-400);              /* 5.74:1 */
+}
+
+/* Light theme: on explicit choice, or when the OS asks for light and no choice was made. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: var(--gray-50);
+    --surface: #ffffff;
+    --surface-raised: var(--gray-100);
+    --border: var(--gray-200);
+    --border-strong: var(--gray-500);   /* 4.82:1 on white */
+    --text: var(--gray-900);            /* 15.06:1 on --bg */
+    --text-secondary: var(--gray-700);  /* 8.4:1 */
+    --text-tertiary: var(--gray-600);   /* 5.98:1 on --bg */
+    --primary: var(--brand-600);        /* 5.79:1 on --bg */
+    --primary-hover: var(--brand-700);
+    --on-primary: #ffffff;              /* 6.29:1, 8.95 on hover */
+    --focus-ring: var(--brand-600);
+    --success: var(--success-600);      /* 6.13:1 */
+    --warning: var(--warning-700);      /* 9.32:1 */
+    --error: var(--error-600);          /* 7.13:1 */
+    --info: var(--info-600);            /* 6.45:1 */
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: var(--gray-50); --surface: #ffffff; --surface-raised: var(--gray-100);
+  --border: var(--gray-200); --border-strong: var(--gray-500);
+  --text: var(--gray-900); --text-secondary: var(--gray-700); --text-tertiary: var(--gray-600);
+  --primary: var(--brand-600); --primary-hover: var(--brand-700); --on-primary: #ffffff;
+  --focus-ring: var(--brand-600);
+  --success: var(--success-600); --warning: var(--warning-700); --error: var(--error-600); --info: var(--info-600);
+}
+
+/* Rule: success green sits close to the brand (1.02:1 apart in dark mode).
+   Every status always carries an icon and a word, never colour alone. */
