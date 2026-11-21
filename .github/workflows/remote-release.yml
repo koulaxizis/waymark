@@ -34,6 +34,25 @@ jobs:
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
             -ldflags "-s -w -H windowsgui -X main.Version=${V}" -o dist/WaymarkRemote-${V}-windows-x64.exe ./cmd/waymark-remote
           cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build the Android APK (signed only when the signing secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.WAYMARK_KEYSTORE_B64 }}
+          WAYMARK_KEYSTORE_PASSWORD: ${{ secrets.WAYMARK_KEYSTORE_PASSWORD }}
+          WAYMARK_KEY_ALIAS: ${{ secrets.WAYMARK_KEY_ALIAS }}
+          WAYMARK_KEY_PASSWORD: ${{ secrets.WAYMARK_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::No signing secrets: the release has no APK"; exit 0; fi
+          V="${GITHUB_REF_NAME#v}"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/waymark.jks"
+          cd android
+          WAYMARK_VERSION="$V" WAYMARK_KEYSTORE="$RUNNER_TEMP/waymark.jks" ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../dist/Waymark-${V}-android.apk
+          rm -f "$RUNNER_TEMP/waymark.jks"
+          cd ../dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

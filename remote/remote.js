@@ -116,20 +116,48 @@ function defaultName() {
 }
 
 let scanStream = null;
+// Scanning uses the built-in BarcodeDetector where there is one (Chrome on
+// Android) and the bundled jsQR elsewhere (Safari, Firefox, the Android app).
+function loadJsQR() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  return new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "vendor/jsQR.js";
+    sc.onload = () => res(window.jsQR);
+    sc.onerror = () => rej(new Error(T("w_noScan")));
+    document.head.append(sc);
+  });
+}
+
 async function scan() {
   msg("startMsg", "");
-  if (!("BarcodeDetector" in window)) { msg("startMsg", T("w_noScan"), "info"); return; }
-  const v = $("video"), det = new BarcodeDetector({ formats: ["qr_code"] });
+  if (!navigator.mediaDevices?.getUserMedia) { msg("startMsg", T("w_noScan"), "info"); return; }
+  let detect;
+  if ("BarcodeDetector" in window) {
+    const det = new BarcodeDetector({ formats: ["qr_code"] });
+    detect = async (v) => (await det.detect(v).catch(() => [])).map((x) => x.rawValue);
+  } else {
+    const jsQR = await loadJsQR();
+    const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+    detect = async (v) => {
+      const w = Math.min(v.videoWidth, 800), h = Math.round((v.videoHeight * w) / (v.videoWidth || 1));
+      if (!w || !h) return [];
+      cv.width = w; cv.height = h;
+      cx.drawImage(v, 0, 0, w, h);
+      const r = jsQR(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" });
+      return r ? [r.data] : [];
+    };
+  }
+  const v = $("video");
   scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   v.srcObject = scanStream;
   v.hidden = false;
   await v.play();
   const tick = async () => {
     if (!scanStream) return;
-    const r = await det.detect(v).catch(() => []);
-    const hit = r.find((x) => x.rawValue.includes("WM1."));
-    if (hit) { stopScan(); takeQR(hit.rawValue); return; }
-    requestAnimationFrame(tick);
+    const hit = (await detect(v)).find((x) => x.includes("WM1."));
+    if (hit) { stopScan(); takeQR(hit); return; }
+    setTimeout(tick, 120);
   };
   tick();
 }
@@ -314,6 +342,7 @@ function goLive(m) {
 }
 
 async function keepAwake() {
+  try { window.WaymarkAndroid?.keepAwake(phase === "live"); } catch {}
   try { if (phase === "live" && "wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch {}
 }
 
@@ -623,6 +652,16 @@ async function download(path) {
   if (r.t === "error") { (pr || progress(false, path, 0)).fail(errText(r.code, r.err)); return; }
   if (h.hex() !== sha) { pr.fail(errText("HASH_MISMATCH")); return; }
   pr.ok();
+  const bridge = window.WaymarkAndroid;
+  if (bridge) {
+    // The Android app cannot save blob: links; it writes to Downloads.
+    const id = bridge.begin(name);
+    let ok = id > 0;
+    for (const b of parts) if (ok) ok = bridge.append(id, b64(b));
+    if (id > 0) ok = bridge.finish(id) && ok;
+    if (!ok) pr.fail(errText("IO", name));
+    return;
+  }
   const url = URL.createObjectURL(new Blob(parts));
   const a = document.createElement("a");
   a.href = url;
@@ -656,6 +695,7 @@ function ended(key, detail) {
   for (const [, p] of pending) { clearTimeout(p.timer); p.resolve({ t: "error", code: "LINK" }); }
   pending.clear();
   try { wakeLock && wakeLock.release(); } catch {}
+  try { window.WaymarkAndroid?.keepAwake(false); } catch {}
   try { pc && pc.close(); } catch {}
   A = null;
   $("topStatus").innerHTML = "";
