@@ -35,6 +35,10 @@
     .brand span { display: none; }
     .web { padding: 10px; }
   }
+  /* Phones that draw the page edge to edge (viewport-fit=cover): stay clear
+     of the status bar, a camera cutout and the home bar. */
+  .top { padding-top: max(10px, env(safe-area-inset-top, 0px)); }
+  body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 </style>
 <script type="module" src="remote.js"></script>
 </head>

@@ -7,7 +7,7 @@ All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 - Relay for when the computers share no network (Proposal 13): the last path after cable, Wi-Fi and mobile data. Off by default. Set its address and access key once in the Controller's Settings; paired Agents learn it over the encrypted link. The relay joins two WebSockets and sees only the encrypted channel. The link moves back to a network as soon as one answers. Both ends show "over relay (internet)".
 - Your own relay in one step: a Cloudflare Worker with a Deploy button (`app/relay-worker`, free plan) or the `waymark-relay` program for your own server, in the Releases.
 - The phone does not use the relay yet (planned for 0.1.2).
-- Android app: the page no longer draws under the status bar on Android 15 (edge to edge).
+- Android app: the page no longer draws under the status bar on Android 15 (edge to edge); the first fix padded the WebView, which draws over its own padding, so the padding now goes on a frame around it. The web page also keeps clear of the status bar and home bar on phones that draw edge to edge.
 
 ## 0.1.0 (unreleased)
 
