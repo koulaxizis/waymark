@@ -1,0 +1,39 @@
+name: Waymark Remote CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/remote-*.yml"]
+  pull_request:
+    paths: ["app/**", ".github/workflows/remote-*.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - name: Vet and test the shared packages
+        run: |
+          go vet ./internal/...
+          GOOS=windows go vet ./...
+          go test -race ./internal/...
+      - name: Build the Windows exe
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
+            -ldflags "-s -w -H windowsgui -X main.Version=0.0.0-ci" -o WaymarkRemote.exe ./cmd/waymark-remote
+          ls -la WaymarkRemote.exe

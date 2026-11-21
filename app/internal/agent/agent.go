@@ -1,0 +1,595 @@
+// Package agent is the Waymark Remote Agent: it runs on the presenter laptop,
+// dials out to Controllers with a typed code, and runs their commands on its
+// folder and on the open presentation. It checks each command against the
+// sender's role and against who holds the control key.
+package agent
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"runtime"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/koulaxizis/waymark/app/internal/files"
+	"github.com/koulaxizis/waymark/app/internal/pair"
+	"github.com/koulaxizis/waymark/app/internal/pres"
+	"github.com/koulaxizis/waymark/app/internal/proto"
+	"github.com/koulaxizis/waymark/app/internal/secure"
+)
+
+// Timings of the Doc: state every 5 s, a link is lost after 6 s of silence,
+// retry every 2 s, the key passes on after the holder is gone for 10 s.
+var (
+	StateEvery   = 5 * time.Second
+	LostAfter    = 6 * time.Second
+	RetryEvery   = 2 * time.Second
+	HolderGrace  = 10 * time.Second
+	downloadPace = time.Duration(0)
+)
+
+// UI is what the window of the Agent receives. All callbacks may come from any
+// goroutine.
+type UI interface {
+	// Prompt asks the presenter to accept a new connection.
+	Prompt(sas, peerName string, role proto.Role) (proto.Role, bool)
+	State(proto.State)
+	Event(proto.Event)
+	Log(format string, args ...any)
+}
+
+// Agent is one running Agent.
+type Agent struct {
+	Name    string
+	Version string
+
+	store *files.Store
+	pres  *pres.Manager
+	ui    UI
+
+	mu      sync.Mutex
+	peers   map[string]*peer // by pairing id
+	holder  string           // pairing id, "" when free
+	lostAt  map[string]time.Time
+	fileSHA string
+	closed  bool
+	wake    chan struct{}
+}
+
+type peer struct {
+	info    proto.Peer
+	pairing *pair.Pairing
+	conn    *secure.Conn // nil while reconnecting
+	lastSeq uint64
+	stop    chan struct{}
+}
+
+// New builds an Agent on a folder and a presentation manager.
+func New(name, version string, store *files.Store, pm *pres.Manager, ui UI) *Agent {
+	a := &Agent{Name: name, Version: version, store: store, pres: pm, ui: ui,
+		peers: map[string]*peer{}, lostAt: map[string]time.Time{}, wake: make(chan struct{}, 1)}
+	go a.ticker()
+	return a
+}
+
+// Store and Pres expose the parts the UI shows.
+func (a *Agent) Store() *files.Store { return a.store }
+func (a *Agent) Pres() *pres.Manager { return a.pres }
+
+// Connect pairs with a Controller from a typed code and keeps the link up
+// until DisconnectAll or 24 hours.
+func (a *Agent) Connect(code string) error {
+	pr, conn, err := pair.Dial(code, a.Name, a.ui.Prompt)
+	if err != nil {
+		return err
+	}
+	p := &peer{info: proto.Peer{ID: pr.ID, Name: pr.PeerName, Role: pr.Role}, pairing: pr, conn: conn, stop: make(chan struct{})}
+	a.mu.Lock()
+	if old := a.peers[pr.ID]; old != nil {
+		close(old.stop)
+		if old.conn != nil {
+			old.conn.Close()
+		}
+	}
+	a.peers[pr.ID] = p
+	a.mu.Unlock()
+	a.ui.Log("connected: %s (%s)", pr.PeerName, pr.Role)
+	go a.keep(p)
+	a.changed()
+	return nil
+}
+
+// keep runs sessions and reconnects every 2 s after a loss.
+func (a *Agent) keep(p *peer) {
+	for {
+		err := a.serve(p)
+		a.ui.Log("link to %s ended: %v", p.info.Name, err)
+		select {
+		case <-p.stop:
+			return
+		default:
+		}
+		a.mu.Lock()
+		p.conn = nil
+		a.lostAt[p.info.ID] = time.Now()
+		a.mu.Unlock()
+		a.changed()
+		for {
+			select {
+			case <-p.stop:
+				return
+			case <-time.After(RetryEvery):
+			}
+			c, err := pair.Resume(p.pairing)
+			if err == nil {
+				a.mu.Lock()
+				select {
+				case <-p.stop:
+					a.mu.Unlock()
+					c.Close()
+					return
+				default:
+				}
+				p.conn = c
+				delete(a.lostAt, p.info.ID)
+				a.mu.Unlock()
+				a.ui.Log("reconnected to %s", p.info.Name)
+				a.changed()
+				break
+			}
+			if time.Now().After(p.pairing.Until) {
+				a.drop(p.info.ID)
+				return
+			}
+		}
+	}
+}
+
+func (a *Agent) serve(p *peer) error {
+	a.mu.Lock()
+	c := p.conn
+	a.mu.Unlock()
+	if c == nil {
+		return errors.New("no connection")
+	}
+	defer c.Close()
+	a.sendState(c)
+	for {
+		c.SetReadDeadline(time.Now().Add(LostAfter))
+		raw, err := c.Recv()
+		if err != nil {
+			return err
+		}
+		var m proto.Msg
+		if err := json.Unmarshal(raw, &m); err != nil {
+			continue
+		}
+		if m.T == proto.TBye {
+			return io.EOF
+		}
+		if m.T != proto.TCmd {
+			continue
+		}
+		reply := a.handle(p, c, m)
+		if reply != nil {
+			if err := c.Send(reply); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func ok(m proto.Msg, data any) *proto.Msg {
+	r := &proto.Msg{V: proto.Version, T: proto.TOK, ID: m.ID, Cmd: m.Cmd}
+	if data != nil {
+		r.Data, _ = json.Marshal(data)
+	}
+	return r
+}
+
+func fail(m proto.Msg, code, msg string) *proto.Msg {
+	return &proto.Msg{V: proto.Version, T: proto.TError, ID: m.ID, Cmd: m.Cmd, Code: code, Err: msg}
+}
+
+func failErr(m proto.Msg, err error) *proto.Msg {
+	code := files.CodeOf(err)
+	if code == proto.ErrIO {
+		code = pres.CodeOf(err)
+	}
+	return fail(m, code, err.Error())
+}
+
+func (a *Agent) handle(p *peer, c *secure.Conn, m proto.Msg) *proto.Msg {
+	role := p.info.Role
+	if !proto.Allowed(role, m.Cmd) {
+		if m.Cmd == "" || !known(m.Cmd) {
+			return fail(m, proto.ErrUnknown, "unknown command")
+		}
+		return fail(m, proto.ErrNotAllowed, "your role cannot do this")
+	}
+	if proto.NeedsHolder(m.Cmd) {
+		a.mu.Lock()
+		holder := a.holder
+		if holder != p.info.ID {
+			a.mu.Unlock()
+			return fail(m, proto.ErrNotHolder, "take control first")
+		}
+		if m.Seq != 0 && m.Seq <= p.lastSeq {
+			a.mu.Unlock()
+			return fail(m, proto.ErrStale, "old command ignored")
+		}
+		if m.Seq != 0 {
+			p.lastSeq = m.Seq
+		}
+		a.mu.Unlock()
+	}
+	switch m.Cmd {
+	case proto.CmdPing:
+		var args proto.PingArgs
+		json.Unmarshal(m.Args, &args)
+		return ok(m, args)
+	case proto.CmdStateGet:
+		return ok(m, a.State())
+	case proto.CmdControlTake:
+		return a.take(p, m)
+	case proto.CmdControlFree:
+		a.mu.Lock()
+		if a.holder == p.info.ID {
+			a.holder = ""
+		}
+		a.mu.Unlock()
+		a.changed()
+		return ok(m, nil)
+	case proto.CmdFileList:
+		l, err := a.store.List()
+		if err != nil {
+			return failErr(m, err)
+		}
+		return ok(m, l)
+	case proto.CmdFileOffer:
+		var args proto.OfferArgs
+		if err := json.Unmarshal(m.Args, &args); err != nil {
+			return fail(m, proto.ErrBadRequest, err.Error())
+		}
+		r, err := a.store.Offer(args)
+		if err != nil {
+			return failErr(m, err)
+		}
+		return ok(m, r)
+	case proto.CmdFileChunk:
+		var args proto.ChunkArgs
+		if err := json.Unmarshal(m.Args, &args); err != nil {
+			return fail(m, proto.ErrBadRequest, err.Error())
+		}
+		n, err := a.store.Chunk(args)
+		if err != nil {
+			return failErr(m, err)
+		}
+		return ok(m, map[string]int64{"offset": n})
+	case proto.CmdFileDone:
+		var args proto.DoneArgs
+		json.Unmarshal(m.Args, &args)
+		final, err := a.store.Done(args.ID)
+		if err != nil {
+			return failErr(m, err)
+		}
+		a.ui.Log("received %s from %s", final, p.info.Name)
+		ev := proto.Event{Kind: "file.new", Path: final, By: &p.info}
+		a.ui.Event(ev)
+		a.broadcast(proto.Msg{V: proto.Version, T: proto.TEvent, Data: mustJSON(ev)})
+		return ok(m, proto.PathArgs{Path: final})
+	case proto.CmdFileGet:
+		var args proto.GetArgs
+		json.Unmarshal(m.Args, &args)
+		return a.download(c, m, args)
+	case proto.CmdFileMkdir:
+		var args proto.PathArgs
+		json.Unmarshal(m.Args, &args)
+		r, err := a.store.Mkdir(args.Path)
+		if err != nil {
+			return failErr(m, err)
+		}
+		return ok(m, proto.PathArgs{Path: r})
+	case proto.CmdFileRename:
+		var args proto.RenameArgs
+		json.Unmarshal(m.Args, &args)
+		r, err := a.store.Rename(args.From, args.To)
+		if err != nil {
+			return failErr(m, err)
+		}
+		return ok(m, proto.PathArgs{Path: r})
+	case proto.CmdFileDelete:
+		var args proto.PathArgs
+		json.Unmarshal(m.Args, &args)
+		if err := a.store.Delete(args.Path); err != nil {
+			return failErr(m, err)
+		}
+		a.ui.Log("%s sent %s to the Recycle Bin", p.info.Name, args.Path)
+		return ok(m, nil)
+	}
+	return a.handlePres(m)
+}
+
+func known(cmd string) bool {
+	for _, r := range []proto.Role{proto.RoleSupervisor} {
+		if proto.Allowed(r, cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Agent) take(p *peer, m proto.Msg) *proto.Msg {
+	a.mu.Lock()
+	cur := a.peers[a.holder]
+	free := a.holder == "" || cur == nil
+	if !free && cur.conn == nil {
+		if t, lost := a.lostAt[a.holder]; lost && time.Since(t) > HolderGrace {
+			free = true
+		}
+	}
+	switch {
+	case a.holder == p.info.ID:
+	case free || p.info.Role == proto.RoleSupervisor:
+		prev := cur
+		a.holder = p.info.ID
+		if prev != nil && prev != p && prev.conn != nil {
+			ev := proto.Event{Kind: "control.taken", By: &p.info}
+			go prev.conn.Send(proto.Msg{V: proto.Version, T: proto.TEvent, Data: mustJSON(ev)})
+		}
+	default:
+		name := cur.info.Name
+		a.mu.Unlock()
+		return fail(m, proto.ErrBusy, "control is held by "+name)
+	}
+	a.mu.Unlock()
+	a.ui.Log("%s has control", p.info.Name)
+	a.changed()
+	return ok(m, nil)
+}
+
+func (a *Agent) download(c *secure.Conn, m proto.Msg, args proto.GetArgs) *proto.Msg {
+	f, size, sum, err := a.store.Open(args.Path)
+	if err != nil {
+		return failErr(m, err)
+	}
+	if args.Offset < 0 || args.Offset > size {
+		f.Close()
+		return fail(m, proto.ErrBadRequest, "bad offset")
+	}
+	if err := c.Send(ok(m, proto.GetReply{Size: size, SHA256: sum})); err != nil {
+		f.Close()
+		return nil
+	}
+	go func() {
+		defer f.Close()
+		buf := make([]byte, proto.ChunkSize)
+		off := args.Offset
+		for {
+			n, err := f.ReadAt(buf, off)
+			last := err == io.EOF || off+int64(n) >= size
+			if err != nil && err != io.EOF {
+				c.Send(fail(m, proto.ErrIO, err.Error()))
+				return
+			}
+			d := proto.FileData{Offset: off, Data: buf[:n], Last: last}
+			if err := c.Send(proto.Msg{V: proto.Version, T: proto.TFileData, ID: m.ID, Data: mustJSON(d)}); err != nil {
+				return
+			}
+			off += int64(n)
+			if last {
+				return
+			}
+			if downloadPace > 0 {
+				time.Sleep(downloadPace)
+			}
+		}
+	}()
+	return nil
+}
+
+func (a *Agent) handlePres(m proto.Msg) *proto.Msg {
+	var err error
+	switch m.Cmd {
+	case proto.CmdPresOpen:
+		var args proto.OpenArgs
+		json.Unmarshal(m.Args, &args)
+		var p string
+		if p, err = a.store.Path(args.Path); err != nil {
+			return failErr(m, err)
+		}
+		if err = a.pres.Open(p, args.App); err == nil {
+			rel, _ := files.Clean(args.Path)
+			a.store.SetOpen(rel)
+			go a.hashOpen(rel)
+		}
+	case proto.CmdPresStart:
+		var args proto.StartArgs
+		json.Unmarshal(m.Args, &args)
+		err = a.pres.Start(args.From)
+		if err == nil {
+			a.ui.Event(proto.Event{Kind: "pres.showing"})
+		}
+	case proto.CmdPresNext:
+		err = a.pres.Next()
+	case proto.CmdPresPrev:
+		err = a.pres.Prev()
+	case proto.CmdPresGoto:
+		var args proto.GotoArgs
+		json.Unmarshal(m.Args, &args)
+		err = a.pres.Goto(args.Slide)
+	case proto.CmdPresBlack:
+		var args proto.BlackArgs
+		json.Unmarshal(m.Args, &args)
+		err = a.pres.Black(args.On)
+	case proto.CmdPresEnd:
+		err = a.pres.End()
+	case proto.CmdPresClose:
+		err = a.pres.Close()
+		a.store.SetOpen("")
+		a.mu.Lock()
+		a.fileSHA = ""
+		a.mu.Unlock()
+	default:
+		return fail(m, proto.ErrUnknown, "unknown command")
+	}
+	if err != nil {
+		return failErr(m, err)
+	}
+	a.changed()
+	return ok(m, a.State())
+}
+
+func (a *Agent) hashOpen(rel string) {
+	sum, _, err := a.store.Hash(rel)
+	if err != nil {
+		return
+	}
+	a.mu.Lock()
+	a.fileSHA = sum
+	a.mu.Unlock()
+	a.changed()
+}
+
+// State is the current report.
+func (a *Agent) State() proto.State {
+	file, app, st := a.pres.Current()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := proto.State{Device: a.Name, Agent: a.Version, OS: runtime.GOOS, App: app,
+		Slide: st.Slide, Slides: st.Slides, Status: st.State, Folder: a.store.Root(), Peers: []proto.Peer{}}
+	if file != "" {
+		s.File = a.store.Rel(file)
+		s.FileSHA = a.fileSHA
+	}
+	if s.Status == "" {
+		s.Status = proto.StatusIdle
+	}
+	for _, p := range a.peers {
+		if p.conn != nil {
+			s.Peers = append(s.Peers, p.info)
+		}
+	}
+	sort.Slice(s.Peers, func(i, j int) bool { return s.Peers[i].Name < s.Peers[j].Name })
+	if h := a.peers[a.holder]; h != nil {
+		hi := h.info
+		s.Holder = &hi
+	}
+	return s
+}
+
+func (a *Agent) sendState(c *secure.Conn) {
+	c.Send(proto.Msg{V: proto.Version, T: proto.TState, Data: mustJSON(a.State())})
+}
+
+func (a *Agent) broadcast(m proto.Msg) {
+	a.mu.Lock()
+	var conns []*secure.Conn
+	for _, p := range a.peers {
+		if p.conn != nil {
+			conns = append(conns, p.conn)
+		}
+	}
+	a.mu.Unlock()
+	for _, c := range conns {
+		c.Send(m)
+	}
+}
+
+// Changed pushes the state now, e.g. after the built-in viewer moved.
+func (a *Agent) Changed() { a.changed() }
+
+// changed pushes the state now (coalesced).
+func (a *Agent) changed() {
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (a *Agent) ticker() {
+	t := time.NewTicker(StateEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+		case <-a.wake:
+		}
+		a.mu.Lock()
+		closed := a.closed
+		// Free the key if its holder has been gone too long.
+		if a.holder != "" {
+			if at, lost := a.lostAt[a.holder]; lost && time.Since(at) > HolderGrace {
+				a.holder = ""
+			}
+		}
+		a.mu.Unlock()
+		if closed {
+			return
+		}
+		st := a.State()
+		a.ui.State(st)
+		a.broadcast(proto.Msg{V: proto.Version, T: proto.TState, Data: mustJSON(st)})
+	}
+}
+
+func (a *Agent) drop(id string) {
+	a.mu.Lock()
+	p := a.peers[id]
+	delete(a.peers, id)
+	delete(a.lostAt, id)
+	if a.holder == id {
+		a.holder = ""
+	}
+	a.mu.Unlock()
+	if p != nil {
+		select {
+		case <-p.stop:
+		default:
+			close(p.stop)
+		}
+		if p.conn != nil {
+			p.conn.Send(proto.Msg{V: proto.Version, T: proto.TBye})
+			p.conn.Close()
+		}
+	}
+	a.changed()
+}
+
+// Disconnect closes one link and forgets its key.
+func (a *Agent) Disconnect(id string) { a.drop(id) }
+
+// DisconnectAll is the presenter's big button: every link closes, the
+// supervisor's too, and no key is kept.
+func (a *Agent) DisconnectAll() {
+	a.mu.Lock()
+	ids := make([]string, 0, len(a.peers))
+	for id := range a.peers {
+		ids = append(ids, id)
+	}
+	a.mu.Unlock()
+	for _, id := range ids {
+		a.drop(id)
+	}
+	a.ui.Log("all connections closed")
+}
+
+// Close stops the Agent.
+func (a *Agent) Close() {
+	a.DisconnectAll()
+	a.pres.Close()
+	a.mu.Lock()
+	a.closed = true
+	a.mu.Unlock()
+	a.changed()
+}
+
+func mustJSON(v any) json.RawMessage {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
