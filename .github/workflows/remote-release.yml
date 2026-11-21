@@ -1,0 +1,44 @@
+name: Waymark Remote release
+
+# A tag such as v0.1.0 builds the portable Windows exe and publishes a GitHub
+# Release with SHA256SUMS.txt. The app's update notice reads the latest stable
+# release, so tag only versions that passed the tests on real machines.
+# Tags with a suffix (v0.2.0-rc1) become pre-releases and are not offered.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - name: Test
+        run: go test ./internal/...
+      - name: Build
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
+            -ldflags "-s -w -H windowsgui -X main.Version=${V}" -o dist/WaymarkRemote-${V}-windows-x64.exe ./cmd/waymark-remote
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          NOTES="$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0 ~ "^## " {p = index($0, v) == 1} p' CHANGELOG.md)"
+          gh release create "$GITHUB_REF_NAME" dist/* $PRE --title "Waymark Remote ${GITHUB_REF_NAME#v}" --notes "${NOTES:-See CHANGELOG.md}"

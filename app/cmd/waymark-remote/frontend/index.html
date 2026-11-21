@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="el" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waymark Remote</title>
+<link rel="stylesheet" href="palette.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="currentColor"/><path d="M32 14C24 14 18 20 18 28c0 10 14 24 14 24s14-14 14-24c0-8-6-14-14-14z" fill="none" stroke="var(--bg)" stroke-width="3.5" stroke-linejoin="round"/><circle cx="32" cy="28" r="4.5" fill="var(--bg)"/></svg>
+    <span>Waymark Remote</span>
+  </div>
+  <span id="modeLabel" class="who"></span>
+  <span class="spacer"></span>
+  <span id="topStatus"></span>
+  <button id="btnDisconnectAll" class="btn danger" hidden data-i18n="disconnectAll"></button>
+  <button id="btnSettings" class="btn ghost" data-i18n-title="settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
+</header>
+<div id="updateBanner" class="banner" hidden>
+  <span id="updateText"></span>
+  <button id="btnUpdate" class="btn primary" data-i18n="updateGet"></button>
+  <button id="btnUpdateLater" class="btn ghost" data-i18n="later"></button>
+</div>
+
+<!-- First start: choose what this computer is -->
+<section id="setup" class="setup" hidden>
+  <div class="card">
+    <h3 data-i18n="setupTitle"></h3>
+    <p class="muted" data-i18n="setupLead"></p>
+    <div class="choice" role="radiogroup">
+      <label><input type="radio" name="mode" value="agent" checked><b data-i18n="modeAgent"></b><span class="muted small" data-i18n="modeAgentText"></span></label>
+      <label><input type="radio" name="mode" value="controller"><b data-i18n="modeController"></b><span class="muted small" data-i18n="modeControllerText"></span></label>
+    </div>
+    <div id="roleBox" hidden>
+      <p class="small muted" data-i18n="roleLead"></p>
+      <div class="roles">
+        <label><input type="radio" name="role" value="operator" checked><span data-i18n="role_operator"></span></label>
+        <label><input type="radio" name="role" value="secretariat"><span data-i18n="role_secretariat"></span></label>
+        <label><input type="radio" name="role" value="supervisor"><span data-i18n="role_supervisor"></span></label>
+      </div>
+    </div>
+    <label class="field"><span data-i18n="nameLabel"></span><input id="setupName" type="text" maxlength="60"></label>
+    <div class="row end"><button id="btnStart" class="btn primary" data-i18n="start"></button></div>
+    <div id="setupErr" class="msg err" hidden></div>
+  </div>
+</section>
+
+<!-- Agent -->
+<main id="agentView" hidden>
+  <div class="grid">
+    <div class="stack">
+      <div class="card">
+        <h2 data-i18n="connect"></h2>
+        <p class="small muted" data-i18n="connectLead"></p>
+        <input id="codeInput" class="code" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX" maxlength="19">
+        <div class="row end" style="margin-top:10px"><button id="btnConnect" class="btn primary" data-i18n="connectBtn"></button></div>
+        <div id="connectMsg" class="msg" hidden></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="connected"></h2>
+        <div id="peerList" class="stack small"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="folder"></h2>
+        <p id="folderPath" class="small muted" style="word-break:break-all"></p>
+        <div class="row">
+          <button id="btnOpenFolder" class="btn" data-i18n="openFolder"></button>
+          <button id="btnChangeFolder" class="btn ghost" data-i18n="changeFolder"></button>
+        </div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card">
+        <h2 data-i18n="presentation"></h2>
+        <div class="row" style="justify-content:space-between">
+          <div>
+            <div id="aFile" class="muted"></div>
+            <div class="small muted" id="aApp"></div>
+          </div>
+          <div class="slidebig num" id="aSlide">–</div>
+        </div>
+        <div id="aStatus" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="files"></h2>
+        <table class="files"><tbody id="aFiles"></tbody></table>
+      </div>
+      <div class="card">
+        <h2 data-i18n="log"></h2>
+        <div id="aLog" class="log"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Controller -->
+<main id="ctrlView" hidden>
+  <div class="grid">
+    <div class="stack">
+      <div class="card">
+        <h2 data-i18n="yourCode"></h2>
+        <p class="small muted" data-i18n="yourCodeLead"></p>
+        <div id="bigCode" class="bigcode num">…</div>
+        <div id="codeIface" class="small muted" style="margin-top:6px"></div>
+        <details class="small" style="margin-top:8px"><summary data-i18n="otherCodes"></summary><div id="codesAlt" class="codes-alt"></div></details>
+        <div class="row" style="margin-top:10px"><button id="btnNewCode" class="btn ghost" data-i18n="newCode"></button></div>
+        <div id="sasBox" class="msg info" hidden>
+          <div data-i18n="sasLead"></div>
+          <div id="sasNum" class="sas num"></div>
+          <div class="small muted" data-i18n="sasHint"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="agents"></h2>
+        <div id="agentList" class="agents"></div>
+        <p id="noAgents" class="small muted" data-i18n="noAgents"></p>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card" id="agentPanel" hidden>
+        <div class="row" style="justify-content:space-between;margin-bottom:8px">
+          <div>
+            <h3 id="pName"></h3>
+            <div id="pInfo" class="small muted"></div>
+          </div>
+          <div class="row">
+            <button id="btnTake" class="btn primary" data-i18n="take"></button>
+            <button id="btnRelease" class="btn" data-i18n="release" hidden></button>
+          </div>
+        </div>
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tabPres" aria-selected="true" data-i18n="tabPres"></button>
+          <button role="tab" id="tabFiles" aria-selected="false" data-i18n="tabFiles"></button>
+        </div>
+        <section id="panePres">
+          <div class="row" style="justify-content:space-between;margin-bottom:12px">
+            <div><div id="cFile"></div><div id="cStatus" class="small"></div></div>
+            <div class="slidebig num" id="cSlide">–</div>
+          </div>
+          <div class="pad">
+            <button class="btn big" id="bPrev" data-i18n="prev"></button>
+            <button class="btn big primary" id="bNext" data-i18n="next"></button>
+            <button class="btn" id="bStart" data-i18n="startShow"></button>
+            <button class="btn" id="bBlack" data-i18n="black"></button>
+            <div class="row wide">
+              <input id="gotoNum" type="number" min="1" inputmode="numeric" style="max-width:120px" aria-label="Slide">
+              <button class="btn" id="bGoto" data-i18n="goto"></button>
+              <span class="spacer" style="flex:1"></span>
+              <button class="btn" id="bEnd" data-i18n="endShow"></button>
+              <button class="btn ghost" id="bClose" data-i18n="closeFile"></button>
+            </div>
+          </div>
+          <p class="small muted" data-i18n="keysHint" style="margin-top:12px"></p>
+          <div id="cmdMsg" class="msg err" hidden></div>
+        </section>
+        <section id="paneFiles" hidden>
+          <div class="toolbar">
+            <button id="fUpload" class="btn primary" data-i18n="upload"></button>
+            <button id="fUploadDir" class="btn" data-i18n="uploadDir"></button>
+            <button id="fMkdir" class="btn" data-i18n="mkdir"></button>
+            <button id="fRefresh" class="btn ghost" data-i18n="refresh"></button>
+            <button id="fOpFolder" class="btn ghost" data-i18n="opFolder"></button>
+          </div>
+          <div id="dropZone" class="drop" data-i18n="dropHere"></div>
+          <div class="small muted" id="curDir"></div>
+          <table class="files"><tbody id="cFiles"></tbody></table>
+          <div id="progress" class="progress"></div>
+          <div id="fileMsg" class="msg err" hidden></div>
+        </section>
+      </div>
+      <div class="card">
+        <h2 data-i18n="log"></h2>
+        <div id="cLog" class="log"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Agent: connection request -->
+<dialog id="promptDlg">
+  <h3 data-i18n="promptTitle"></h3>
+  <p id="promptWho"></p>
+  <div class="sas num" id="promptSas"></div>
+  <p class="small muted" data-i18n="promptHint"></p>
+  <label class="field"><span data-i18n="promptRole"></span>
+    <select id="promptRole"></select>
+  </label>
+  <div class="row end">
+    <button id="btnReject" class="btn danger" data-i18n="reject"></button>
+    <button id="btnAccept" class="btn primary" data-i18n="accept"></button>
+  </div>
+</dialog>
+
+<!-- Question with optional text field (instead of window.prompt/confirm) -->
+<dialog id="askDlg">
+  <p id="askText"></p>
+  <input id="askInput" type="text" maxlength="200">
+  <div class="row end" style="margin-top:12px">
+    <button id="askNo" class="btn ghost" data-i18n="cancel"></button>
+    <button id="askYes" class="btn primary" data-i18n="ok"></button>
+  </div>
+</dialog>
+
+<!-- Settings -->
+<dialog id="settingsDlg">
+  <h3 data-i18n="settings"></h3>
+  <label class="field"><span data-i18n="language"></span>
+    <select id="sLang"><option value="el">Ελληνικά</option><option value="en">English</option></select></label>
+  <label class="field"><span data-i18n="theme"></span>
+    <select id="sTheme"><option value="dark" data-i18n="dark"></option><option value="light" data-i18n="light"></option></select></label>
+  <label class="field"><span data-i18n="nameLabel"></span><input id="sName" type="text" maxlength="60"></label>
+  <label class="row small" style="margin-bottom:8px"><input id="sUpdate" type="checkbox"> <span data-i18n="updateCheck"></span></label>
+  <div class="row small" style="margin-bottom:12px"><button id="btnCheckNow" class="btn ghost" data-i18n="checkNow"></button><span id="checkMsg" class="muted"></span></div>
+  <p class="small muted"><span data-i18n="version"></span> <span id="sVersion" class="num"></span></p>
+  <div class="row end">
+    <button id="btnResetMode" class="btn ghost" data-i18n="resetMode"></button>
+    <button id="btnSaveSettings" class="btn primary" data-i18n="save"></button>
+  </div>
+</dialog>
+
+<!-- Built-in PDF viewer (Agent) -->
+<div id="viewer" hidden>
+  <canvas id="vCanvas"></canvas>
+  <div class="black" id="vBlack" hidden></div>
+  <div class="hint" id="vHint"></div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
