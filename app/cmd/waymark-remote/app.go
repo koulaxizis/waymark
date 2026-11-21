@@ -18,6 +18,7 @@ import (
 	"github.com/koulaxizis/waymark/app/internal/agent"
 	"github.com/koulaxizis/waymark/app/internal/controller"
 	"github.com/koulaxizis/waymark/app/internal/proto"
+	"github.com/koulaxizis/waymark/app/internal/rtc"
 )
 
 // Config is saved next to the exe as waymark-remote.json.
@@ -42,6 +43,7 @@ type App struct {
 
 	agent  *agent.Agent
 	viewer *viewer
+	invite *rtc.Invite
 	ctrl   *controller.Controller
 
 	prompt chan promptAnswer
@@ -227,6 +229,7 @@ func (a *App) shutdown() {
 	a.mu.Unlock()
 	if ag != nil {
 		ag.Close()
+		a.AgentCloseInvite()
 	}
 	if c != nil {
 		c.Close()

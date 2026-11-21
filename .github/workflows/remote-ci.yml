@@ -3,9 +3,9 @@ name: Waymark Remote CI
 on:
   push:
     branches: [main]
-    paths: ["app/**", ".github/workflows/remote-*.yml"]
+    paths: ["app/**", "remote/**", ".github/workflows/remote-*.yml"]
   pull_request:
-    paths: ["app/**", ".github/workflows/remote-*.yml"]
+    paths: ["app/**", "remote/**", ".github/workflows/remote-*.yml"]
 
 permissions:
   contents: read
@@ -27,6 +27,8 @@ jobs:
         with:
           go-version-file: app/go.mod
           cache-dependency-path: app/go.sum
+      - name: Check the browser Controller shares the app's strings and styles
+        run: scripts/sync-web.sh --check
       - name: Vet and test the shared packages
         run: |
           go vet ./internal/...
@@ -37,3 +39,7 @@ jobs:
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
             -ldflags "-s -w -H windowsgui -X main.Version=0.0.0-ci" -o WaymarkRemote.exe ./cmd/waymark-remote
           ls -la WaymarkRemote.exe
+      - name: Browser Controller against a real Agent (headless Chromium)
+        run: |
+          cd e2e && npm install --no-save --no-audit --no-fund playwright@1.49.1 && npx playwright install --with-deps chromium
+          cd .. && go test -tags browser -count=1 -v ./e2e

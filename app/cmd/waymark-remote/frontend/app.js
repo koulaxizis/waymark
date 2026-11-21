@@ -141,6 +141,14 @@ function initAgent() {
     const d = await go().AgentChooseFolder();
     if (d) agentMsg(T("folderNext"), "info");
   };
+  $("btnInvite").onclick = showInvite;
+  $("btnInviteClose").onclick = closeInvite;
+  // For a laptop browser without a camera: send the link another way.
+  $("btnCopyLink").onclick = async () => {
+    if (await window.runtime.ClipboardSetText($("phoneQR").alt)) phoneMsg(T("phoneCopied"), "ok");
+  };
+  $("btnAcceptPhone").onclick = acceptPhone;
+  $("returnInput").addEventListener("keydown", (e) => { if (e.key === "Enter") acceptPhone(); });
   on("agent:prompt", showPrompt);
   on("agent:prompt-done", () => $("promptDlg").open && $("promptDlg").close());
   on("agent:state", (s) => { aState = s; renderAgentState(); });
@@ -177,6 +185,73 @@ async function connect() {
   } finally {
     $("btnConnect").disabled = false;
   }
+}
+
+let inviteTimer = null;
+
+function phoneMsg(text, kind = "err") {
+  const m = $("phoneMsg");
+  m.className = "msg " + kind;
+  m.textContent = text;
+  m.hidden = !text;
+}
+
+async function showInvite() {
+  phoneMsg("");
+  try {
+    const inv = await go().AgentInvite();
+    $("phoneQR").src = inv.qr;
+    $("phoneQR").alt = inv.url;
+    $("phoneBox").hidden = false;
+    $("phoneStart").hidden = true;
+    $("returnInput").value = "";
+    $("returnInput").focus();
+    clearInterval(inviteTimer);
+    const tick = () => {
+      const left = Math.round((inv.expires - Date.now()) / 60000);
+      if (left <= 0) { closeInvite(); phoneMsg(T("phoneExpired"), "info"); return; }
+      $("phoneExpires").textContent = T("phoneValid", left);
+    };
+    tick();
+    inviteTimer = setInterval(tick, 15000);
+  } catch (e) {
+    phoneMsg(String(e));
+  }
+}
+
+function closeInvite() {
+  clearInterval(inviteTimer);
+  go().AgentCloseInvite();
+  $("phoneBox").hidden = true;
+  $("phoneStart").hidden = false;
+}
+
+async function acceptPhone() {
+  const code = $("returnInput").value.trim();
+  if (!code) return;
+  $("btnAcceptPhone").disabled = true;
+  phoneMsg(T("phoneWaiting"), "info");
+  try {
+    await go().AgentAcceptPhone(code);
+    clearInterval(inviteTimer);
+    $("phoneBox").hidden = true;
+    $("phoneStart").hidden = false;
+    phoneMsg(T("connectedOk"), "ok");
+  } catch (e) {
+    phoneMsg(friendlyPhoneError(String(e)));
+  } finally {
+    $("btnAcceptPhone").disabled = false;
+  }
+}
+
+function friendlyPhoneError(e) {
+  if (/return code|check|invalid character|expected/.test(e)) return T("errReturnCode");
+  if (/nothing arrived/.test(e)) return T("errPhoneReach");
+  if (/does not hold|certificate/.test(e)) return T("errPhoneQR");
+  if (/expired|was used/.test(e)) return T("phoneExpired");
+  if (/did not accept/.test(e)) return T("errRejected");
+  if (/page protocol/.test(e)) return T("errVersion");
+  return e;
 }
 
 function friendlyPairError(e) {

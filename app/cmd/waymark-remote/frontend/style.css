@@ -106,6 +106,9 @@ label.field > span { font-size: 13px; color: var(--text-secondary); }
 .sas { font: 700 44px/1 ui-monospace, Consolas, monospace; letter-spacing: .2em; text-align: center; margin: 12px 0; color: var(--primary); }
 .codes-alt { margin-top: 10px; display: grid; gap: 4px; }
 
+.qrwrap { background: #fff; border-radius: 10px; padding: 10px; width: fit-content; margin: 4px auto 12px; }
+.qrwrap img { display: block; width: 240px; height: 240px; image-rendering: pixelated; }
+
 /* Agent list (Controller) */
 .agents { display: grid; gap: 8px; }
 .agent {

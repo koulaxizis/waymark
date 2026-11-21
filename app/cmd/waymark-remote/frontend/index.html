@@ -62,6 +62,23 @@
         <div id="connectMsg" class="msg" hidden></div>
       </div>
       <div class="card">
+        <h2 data-i18n="phone"></h2>
+        <p class="small muted" data-i18n="phoneLead"></p>
+        <div id="phoneStart" class="row"><button id="btnInvite" class="btn" data-i18n="phoneShow"></button></div>
+        <div id="phoneBox" hidden>
+          <div class="qrwrap"><img id="phoneQR" alt="" width="240" height="240"></div>
+          <p class="small muted" data-i18n="phoneStep2"></p>
+          <input id="returnInput" class="code" type="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX" maxlength="19">
+          <div class="row end" style="margin-top:10px">
+            <button id="btnCopyLink" class="btn ghost" data-i18n="phoneCopy"></button>
+            <button id="btnInviteClose" class="btn ghost" data-i18n="cancel"></button>
+            <button id="btnAcceptPhone" class="btn primary" data-i18n="connectBtn"></button>
+          </div>
+          <p class="small muted" id="phoneExpires"></p>
+        </div>
+        <div id="phoneMsg" class="msg" hidden></div>
+      </div>
+      <div class="card">
         <h2 data-i18n="connected"></h2>
         <div id="peerList" class="stack small"></div>
       </div>

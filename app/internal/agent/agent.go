@@ -17,7 +17,6 @@ import (
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/pres"
 	"github.com/koulaxizis/waymark/app/internal/proto"
-	"github.com/koulaxizis/waymark/app/internal/secure"
 )
 
 // Timings of the Doc: state every 5 s, a link is lost after 6 s of silence,
@@ -58,10 +57,19 @@ type Agent struct {
 	wake    chan struct{}
 }
 
+// Link is one message pipe to a Controller: the encrypted TCP link of flow A
+// (secure.Conn) or the browser data channel of flow B (rtc.Link).
+type Link interface {
+	Send(v any) error
+	Recv() ([]byte, error)
+	SetReadDeadline(time.Time) error
+	Close() error
+}
+
 type peer struct {
 	info    proto.Peer
-	pairing *pair.Pairing
-	conn    *secure.Conn // nil while reconnecting
+	pairing *pair.Pairing // nil for a browser: it cannot resume, it pairs again
+	conn    Link          // nil while reconnecting
 	lastSeq uint64
 	stop    chan struct{}
 }
@@ -101,6 +109,25 @@ func (a *Agent) Connect(code string) error {
 	return nil
 }
 
+// Attach adds a Controller that paired some other way, such as a browser
+// over flow B. It has no resume key: when its link is lost it is dropped and
+// the browser pairs again with a new QR.
+func (a *Agent) Attach(id, name string, role proto.Role, l Link) {
+	p := &peer{info: proto.Peer{ID: id, Name: name, Role: role}, conn: l, stop: make(chan struct{})}
+	a.mu.Lock()
+	if old := a.peers[id]; old != nil {
+		close(old.stop)
+		if old.conn != nil {
+			old.conn.Close()
+		}
+	}
+	a.peers[id] = p
+	a.mu.Unlock()
+	a.ui.Log("connected: %s (%s, browser)", name, role)
+	go a.keep(p)
+	a.changed()
+}
+
 // keep runs sessions and reconnects every 2 s after a loss.
 func (a *Agent) keep(p *peer) {
 	for {
@@ -110,6 +137,10 @@ func (a *Agent) keep(p *peer) {
 		case <-p.stop:
 			return
 		default:
+		}
+		if p.pairing == nil {
+			a.drop(p.info.ID)
+			return
 		}
 		a.mu.Lock()
 		p.conn = nil
@@ -201,7 +232,7 @@ func failErr(m proto.Msg, err error) *proto.Msg {
 	return fail(m, code, err.Error())
 }
 
-func (a *Agent) handle(p *peer, c *secure.Conn, m proto.Msg) *proto.Msg {
+func (a *Agent) handle(p *peer, c Link, m proto.Msg) *proto.Msg {
 	role := p.info.Role
 	if !proto.Allowed(role, m.Cmd) {
 		if m.Cmd == "" || !known(m.Cmd) {
@@ -350,7 +381,7 @@ func (a *Agent) take(p *peer, m proto.Msg) *proto.Msg {
 	return ok(m, nil)
 }
 
-func (a *Agent) download(c *secure.Conn, m proto.Msg, args proto.GetArgs) *proto.Msg {
+func (a *Agent) download(c Link, m proto.Msg, args proto.GetArgs) *proto.Msg {
 	f, size, sum, err := a.store.Open(args.Path)
 	if err != nil {
 		return failErr(m, err)
@@ -480,13 +511,13 @@ func (a *Agent) State() proto.State {
 	return s
 }
 
-func (a *Agent) sendState(c *secure.Conn) {
+func (a *Agent) sendState(c Link) {
 	c.Send(proto.Msg{V: proto.Version, T: proto.TState, Data: mustJSON(a.State())})
 }
 
 func (a *Agent) broadcast(m proto.Msg) {
 	a.mu.Lock()
-	var conns []*secure.Conn
+	var conns []Link
 	for _, p := range a.peers {
 		if p.conn != nil {
 			conns = append(conns, p.conn)
