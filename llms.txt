@@ -29,6 +29,10 @@ Platforms: Windows (exe), macOS (.app), Linux (AppImage), Android (APK), iPhone/
 
 Time and speakers (timer, stage display, run of show, phone remote, overview), presenting and playout, presentation/PDF/media checks, crew and sound tools, and Waymark Kit (equipment checklists).
 
+## Support
+
+Waymark is free and stays free; buying or donating unlocks nothing. Optional support: https://waymarked.site/support/ (Waymark merch from the Glarolykoi shop, a one-time donation, or hiring the author). Waymark has no paid services.
+
 ## Media kit
 
 Logos, wallpapers, banners, print files, palette and press texts (EN, EL): https://waymarked.site/media-kit/
