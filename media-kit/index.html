@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media kit · Waymark</title>
+<meta name="description" content="Waymark media kit: logos, wallpapers, banners, print files, palette, font and press texts in English and Greek, free to download. Also the family kit with NULL JSFX, orOS and noxpress.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Christos Koulaxizis">
+<meta name="theme-color" content="#090e0e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f6f5" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="https://waymarked.site/media-kit/">
+<link rel="alternate" hreflang="en" href="https://waymarked.site/media-kit/">
+<link rel="alternate" hreflang="el" href="https://waymarked.site/media-kit/?lang=el">
+<link rel="alternate" hreflang="x-default" href="https://waymarked.site/media-kit/">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate" type="text/plain" title="LLM summary" href="/llms.txt">
+<link rel="stylesheet" href="/palette.css">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Waymark">
+<meta property="og:title" content="Media kit · Waymark">
+<meta property="og:description" content="Logos, wallpapers, banners, print files, palette and press texts for Waymark. Free to download.">
+<meta property="og:url" content="https://waymarked.site/media-kit/">
+<meta property="og:image" content="https://waymarked.site/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Waymark: free, open-source tools for AV and conferences">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="el_GR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Media kit · Waymark">
+<meta name="twitter:description" content="Logos, wallpapers, banners, print files, palette and press texts for Waymark.">
+<meta name="twitter:image" content="https://waymarked.site/og-image.png">
+
+<script>
+  /* Runs before first paint so the chosen language and theme never flash. */
+  (function () {
+    var d = document.documentElement, lang = null, theme = null;
+    try {
+      var q = new URLSearchParams(location.search).get('lang');
+      lang = (q === 'el' || q === 'en') ? q : localStorage.getItem('waymark-lang');
+      theme = localStorage.getItem('waymark-theme');
+    } catch (e) {}
+    if (lang === 'el') d.lang = 'el';
+    if (theme === 'light' || theme === 'dark') d.dataset.theme = theme;
+  })();
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Bilingual: every string exists twice; the page language decides which one shows. */
+  html[lang="en"] [lang="el"],
+  html[lang="el"] [lang="en"] { display: none !important; }
+
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1rem; }
+  @media (min-width: 40rem) { .wrap { padding: 0 1.5rem; } }
+
+  /* Top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; padding-bottom: 1rem; }
+  .brand { display: flex; align-items: center; gap: .625rem; font-weight: 700; font-size: 1.125rem; letter-spacing: .01em; }
+  .brand svg { width: 2rem; height: 2rem; flex: none; }
+  .controls { display: flex; gap: .5rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .375rem;
+    min-height: 2.75rem; padding: 0 .875rem;
+    font: inherit; font-size: .9375rem; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: .625rem;
+    cursor: pointer; touch-action: manipulation;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .btn:hover { background: var(--surface-raised); }
+  .btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .btn svg { width: 1.125rem; height: 1.125rem; }
+  .icon-sun { display: none; }
+  html[data-theme="dark"] .icon-sun { display: block; }
+  html[data-theme="dark"] .icon-moon { display: none; }
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme]) .icon-sun, html[data-theme="light"] .icon-sun { display: none; }
+    html:not([data-theme]) .icon-moon { display: block; }
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) .icon-sun { display: block; }
+    html:not([data-theme]) .icon-moon { display: none; }
+  }
+
+  /* Hero */
+  .hero { padding-top: 3.5rem; padding-bottom: 3rem; }
+  @media (min-width: 48rem) { .hero { padding-top: 5.5rem; padding-bottom: 4.5rem; } }
+  .status {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .3125rem .75rem; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: .875rem;
+  }
+  .status svg { width: 1rem; height: 1rem; color: var(--warning); flex: none; }
+  h1 {
+    margin: 1.25rem 0 1rem;
+    font-size: clamp(2.25rem, 6vw + .5rem, 4rem); line-height: 1.08; letter-spacing: -.02em;
+    text-wrap: balance;
+  }
+  h1 .accent { color: var(--primary); }
+  .lede { max-width: 40rem; margin: 0; font-size: 1.1875rem; color: var(--text-secondary); text-wrap: pretty; }
+
+  /* Sections */
+  section { padding: 3rem 0; border-top: 1px solid var(--border); }
+  .eyebrow { margin: 0 0 .5rem; font-size: .8125rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); }
+  html[lang="el"] .eyebrow { text-transform: none; letter-spacing: .02em; font-size: .875rem; }
+  h2 { margin: 0 0 1rem; font-size: clamp(1.5rem, 2.5vw + .75rem, 2.125rem); line-height: 1.2; letter-spacing: -.01em; text-wrap: balance; }
+  h3 { margin: 0 0 .375rem; font-size: 1.0625rem; line-height: 1.35; }
+  p { margin: 0 0 1rem; }
+  .muted { color: var(--text-secondary); }
+  .intro { max-width: 42rem; color: var(--text-secondary); }
+
+  .grid { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 1.5rem; }
+  @media (min-width: 40rem) { .grid.two, .grid.three { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 60rem) { .grid.three { grid-template-columns: repeat(3, 1fr); } }
+
+  .card {
+    padding: 1.25rem; border-radius: .875rem;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .card p { margin: 0; color: var(--text-secondary); font-size: 1rem; }
+  .card .ico {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.5rem; height: 2.5rem; margin-bottom: .75rem; border-radius: .625rem;
+    background: var(--surface-raised); color: var(--primary);
+  }
+  .card .ico svg { width: 1.375rem; height: 1.375rem; }
+
+  footer { padding: 2.5rem 0 3rem; border-top: 1px solid var(--border); color: var(--text-tertiary); font-size: .9375rem; }
+  footer p { margin: 0 0 .375rem; }
+  footer a { color: var(--text-secondary); }
+  footer a:hover { color: var(--primary); }
+
+  /* Media kit */
+  .mk { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 1.5rem; align-items: start; }
+  @media (min-width: 48rem) { .mk { grid-template-columns: 3fr 2fr; } }
+  .mk img { display: block; width: 100%; height: auto; border-radius: .875rem; border: 1px solid var(--border); background: var(--surface); }
+  .mk-shots { display: grid; gap: .75rem; }
+  .dl { display: grid; gap: .75rem; }
+  a.opt {
+    display: block; padding: 1rem 1.25rem; border-radius: .875rem; text-decoration: none; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border-strong);
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  a.opt:hover { background: var(--surface-raised); border-color: var(--primary); }
+  a.opt:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  a.opt.main { border-color: var(--primary); }
+  .opt b { display: block; font-size: 1.0625rem; }
+  .opt span { display: block; color: var(--text-secondary); font-size: .9375rem; }
+  .opt small { display: block; margin-top: .25rem; color: var(--text-tertiary); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+  .inside { margin: 1.5rem 0 0; padding-left: 1.25rem; color: var(--text-secondary); }
+  .inside li { margin-bottom: .375rem; }
+  a { color: var(--primary); }
+  a:hover { color: var(--primary-hover); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="wrap bar">
+  <a class="brand" href="/" aria-label="Waymark home" style="color:inherit;text-decoration:none">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="30" fill="var(--primary)"/>
+      <path d="M32 14C24 14 18 20 18 28c0 10 14 24 14 24s14-14 14-24c0-8-6-14-14-14z" fill="none" stroke="var(--on-primary)" stroke-width="3.5" stroke-linejoin="round"/>
+      <circle cx="32" cy="28" r="4.5" fill="var(--on-primary)"/>
+    </svg>
+    <span>Waymark</span>
+  </a>
+  <div class="controls">
+    <button class="btn" type="button" id="lang-toggle">
+      <span lang="en">Ελληνικά</span><span lang="el">English</span>
+    </button>
+    <button class="btn" type="button" id="theme-toggle">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <span lang="en">Theme</span><span lang="el">Θέμα</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow"><span lang="en">Media kit</span><span lang="el">Media kit</span></p>
+    <h1>
+      <span lang="en">Logos, wallpapers and press texts.</span>
+      <span lang="el">Λογότυπα, wallpapers και κείμενα για τον Τύπο.</span>
+    </h1>
+    <p class="lede">
+      <span lang="en">Everything you need to write about or present Waymark, free to download. This is brand material only: Waymark itself is in design and has no release or download yet.</span>
+      <span lang="el">Ό,τι χρειάζεσαι για να γράψεις για το Waymark ή να το παρουσιάσεις, δωρεάν. Είναι μόνο υλικό ταυτότητας: το ίδιο το Waymark είναι σε σχεδιασμό και δεν έχει ακόμη έκδοση ή λήψη.</span>
+    </p>
+  </div>
+
+  <section aria-labelledby="h-kit">
+    <div class="wrap">
+      <p class="eyebrow"><span lang="en">Waymark</span><span lang="el">Waymark</span></p>
+      <h2 id="h-kit"><span lang="en">The Waymark kit</span><span lang="el">Το kit του Waymark</span></h2>
+      <div class="mk">
+        <div class="mk-shots">
+          <img src="/assets/media-kit/waymark-wallpaper.jpg" width="960" height="540" loading="lazy" alt="Waymark desktop wallpaper: the pin mark above a dashed trail on a dark green background">
+          <img src="/assets/media-kit/waymark-phone.jpg" width="680" height="480" loading="lazy" alt="Three Waymark phone wallpapers: mark, pattern and minimal">
+        </div>
+        <div class="dl">
+          <a class="opt main" href="https://github.com/koulaxizis/null-jsfx/releases/download/media-kit/Waymark-Media-Kit.zip">
+            <b><span lang="en">Media kit</span><span lang="el">Media kit</span></b>
+            <span lang="en">Wallpapers, logos and SVG, banners, print files, palette, font, descriptions, facts sheet and an announcement in English and Greek.</span>
+            <span lang="el">Wallpapers, λογότυπα και SVG, banners, αρχεία εκτύπωσης, παλέτα, γραμματοσειρά, περιγραφές, φύλλο στοιχείων και ανακοίνωση στα αγγλικά και στα ελληνικά.</span>
+            <small>Waymark-Media-Kit.zip · about 23 MB</small>
+          </a>
+          <a class="opt" href="https://github.com/koulaxizis/null-jsfx/releases/download/media-kit/Waymark-Wallpapers.zip">
+            <b><span lang="en">Wallpapers only</span><span lang="el">Μόνο wallpapers</span></b>
+            <span lang="en">24 dark wallpapers in three styles: 4K, 5K, 16:10, ultrawide, Android, iPhone and tablet.</span>
+            <span lang="el">24 σκούρα wallpapers σε τρία στυλ: 4K, 5K, 16:10, ultrawide, Android, iPhone και tablet.</span>
+            <small>Waymark-Wallpapers.zip · about 12 MB</small>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-family">
+    <div class="wrap">
+      <p class="eyebrow"><span lang="en">The family</span><span lang="el">Η οικογένεια</span></p>
+      <h2 id="h-family"><span lang="en">Waymark, NULL JSFX, orOS and noxpress together</span><span lang="el">Waymark, NULL JSFX, orOS και noxpress μαζί</span></h2>
+      <p class="intro">
+        <span lang="en">Waymark belongs to a family of free, open-source projects by Christos Koulaxizis: NULL JSFX (audio plugins), orOS (an operating system in the browser) and noxpress (WordPress plugins).</span>
+        <span lang="el">Το Waymark ανήκει σε μια οικογένεια δωρεάν projects ανοιχτού κώδικα του Χρήστου Κουλαξίζη: NULL JSFX (plugins ήχου), orOS (λειτουργικό σύστημα στον browser) και noxpress (plugins για WordPress).</span>
+      </p>
+      <div class="mk">
+        <div class="mk-shots">
+          <img src="/assets/media-kit/family-wallpaper.jpg" width="960" height="540" loading="lazy" alt="Desktop wallpaper with the NULL JSFX, orOS, noxpress and Waymark icons side by side">
+          <img src="/assets/media-kit/family-phone.jpg" width="680" height="480" loading="lazy" alt="Three phone wallpapers with the four projects together">
+        </div>
+        <div class="dl">
+          <a class="opt main" href="https://github.com/koulaxizis/null-jsfx/releases/download/media-kit/NULL-JSFX-orOS-noxpress-Media-Kit.zip">
+            <b><span lang="en">Family media kit</span><span lang="el">Media kit της οικογένειας</span></b>
+            <span lang="en">The kits of all four projects, plus the files that show them together.</span>
+            <span lang="el">Τα kits και των τεσσάρων projects, μαζί με τα αρχεία που τα δείχνουν μαζί.</span>
+            <small>NULL-JSFX-orOS-noxpress-Media-Kit.zip · about 103 MB</small>
+          </a>
+          <a class="opt" href="https://github.com/koulaxizis/null-jsfx/releases/download/media-kit/NULL-JSFX-orOS-noxpress-Wallpapers.zip">
+            <b><span lang="en">Family wallpapers only</span><span lang="el">Μόνο τα wallpapers της οικογένειας</span></b>
+            <span lang="en">24 wallpapers of the four projects together, in the same sizes.</span>
+            <span lang="el">24 wallpapers των τεσσάρων projects μαζί, στα ίδια μεγέθη.</span>
+            <small>NULL-JSFX-orOS-noxpress-Wallpapers.zip · about 11 MB</small>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-use">
+    <div class="wrap">
+      <p class="eyebrow"><span lang="en">Use</span><span lang="el">Χρήση</span></p>
+      <h2 id="h-use"><span lang="en">How you may use it</span><span lang="el">Πώς μπορείς να το χρησιμοποιήσεις</span></h2>
+      <ul class="inside">
+        <li><span lang="en">Free for your own devices and printed items, and to write about, link to, review or present Waymark.</span><span lang="el">Δωρεάν για τις δικές σου συσκευές και τα δικά σου τυπωμένα αντικείμενα, και για να γράψεις, να παραπέμψεις, να κάνεις κριτική ή να παρουσιάσεις το Waymark.</span></li>
+        <li><span lang="en">Do not alter the mark, imply endorsement, or sell the files or products made mostly from them.</span><span lang="el">Μην αλλοιώνεις το σήμα, μην υπονοείς υποστήριξη και μην πουλάς τα αρχεία ή προϊόντα φτιαγμένα κυρίως από αυτά.</span></li>
+        <li><span lang="en">Please describe Waymark as in design: it has no release, beta or download yet.</span><span lang="el">Γράψε ότι το Waymark είναι σε σχεδιασμό: δεν έχει ακόμη έκδοση, beta ή λήψη.</span></li>
+      </ul>
+      <p class="note"><span lang="en">The code of Waymark is MIT. The brand files have their own licence, included in every zip. Contact: Christos Koulaxizis, via <a href="https://koulaxizis.gr/">koulaxizis.gr</a>.</span><span lang="el">Ο κώδικας του Waymark έχει άδεια MIT. Τα αρχεία ταυτότητας έχουν δική τους άδεια, μέσα σε κάθε zip. Επικοινωνία: Χρήστος Κουλαξίζης, μέσω του <a href="https://koulaxizis.gr/">koulaxizis.gr</a>.</span></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><span lang="en">Designed by Christos Koulaxizis</span><span lang="el">Σχεδιασμός: Christos Koulaxizis</span></p>
+    <p><span lang="en">No cookies · No tracking · Open source (MIT)</span><span lang="el">Χωρίς cookies · Χωρίς tracking · Ανοιχτού κώδικα (MIT)</span></p>
+    <p><a href="/media-kit/">Media kit</a></p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var d = document.documentElement;
+    function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+    document.getElementById('lang-toggle').addEventListener('click', function () {
+      var next = d.lang === 'el' ? 'en' : 'el';
+      d.lang = next;
+      save('waymark-lang', next);
+      try {
+        var u = new URL(location.href);
+        if (next === 'el') u.searchParams.set('lang', 'el'); else u.searchParams.delete('lang');
+        history.replaceState(null, '', u);
+      } catch (e) {}
+    });
+
+    document.getElementById('theme-toggle').addEventListener('click', function () {
+      var current = d.dataset.theme ||
+        (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      var next = current === 'dark' ? 'light' : 'dark';
+      d.dataset.theme = next;
+      save('waymark-theme', next);
+    });
+  })();
+</script>
+</body>
+</html>

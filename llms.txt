@@ -29,6 +29,10 @@ Platforms: Windows (exe), macOS (.app), Linux (AppImage), Android (APK), iPhone/
 
 Time and speakers (timer, stage display, run of show, phone remote, overview), presenting and playout, presentation/PDF/media checks, crew and sound tools, and Waymark Kit (equipment checklists).
 
+## Media kit
+
+Logos, wallpapers, banners, print files, palette and press texts (EN, EL): https://waymarked.site/media-kit/
+
 ## Ελληνικά
 
 Το Waymark είναι δωρεάν σειρά εργαλείων ανοιχτού κώδικα (MIT) για ηχοληψία, οπτικοακουστικά και συνέδρια. Portable, τοπικά και offline, χωρίς εγκατάσταση ή cloud. Πρώτο εργαλείο: Waymark Remote. Βρίσκεται σε σχεδιασμό, χωρίς έκδοση ακόμη.
