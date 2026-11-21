@@ -43,7 +43,8 @@ EOF
 	;;
 macos)
 	for a in arm64 amd64; do
-		CGO_ENABLED=1 GOARCH=$a go build -trimpath -tags desktop,production -ldflags "$flags" -o "$build/wm-$a" ./cmd/waymark-remote
+		# Wails 2.10 uses UTType but does not link its framework.
+		CGO_LDFLAGS="-framework UniformTypeIdentifiers" MACOSX_DEPLOYMENT_TARGET=11.0 CGO_ENABLED=1 GOARCH=$a go build -trimpath -tags desktop,production -ldflags "$flags" -o "$build/wm-$a" ./cmd/waymark-remote
 	done
 	app="$build/Waymark Remote.app"
 	mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
