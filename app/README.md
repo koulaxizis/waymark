@@ -17,6 +17,10 @@ The design and every decision live in the Waymark plan document. This folder hol
 | `internal/pres` | Presentation drivers: PowerPoint COM, Impress, system viewer |
 | `internal/agent` | Agent logic: roles, control key, state reports |
 | `internal/controller` | Controller logic: links, calls, uploads, downloads |
+| `internal/rtc` | Flow B: the Agent side of the browser Controller (QR, return code, ICE-lite WebRTC) |
+| `../remote` | The browser Controller page, served at waymarked.site/remote/ |
+| `android` | The Android app `site.waymarked.app`, a WebView shell around the same page |
+| `e2e` | The browser page in headless Chromium against a real Agent |
 
 ## Build
 
@@ -30,13 +34,18 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,product
 
 `rsrc_windows_amd64.syso` carries the icon and the manifest (runs as invoker, never asks for admin). Rebuild it after changing `winres/` with `go-winres make --in winres/winres.json --out rsrc --arch amd64`.
 
-Tests: `go test -race ./internal/...` (includes an Agent ↔ Controller run on loopback).
+Tests: `go test -race ./internal/...` (includes an Agent ↔ Controller run on loopback). The browser test needs Node and Playwright: `go test -tags browser ./e2e`.
+
+`remote/` shares `i18n.js`, `style.css` and `palette.css` with the desktop app. After changing them run `scripts/sync-web.sh`; CI checks the copies match.
+
+Android: JDK 17 and the Android SDK, then `cd android && ./gradlew assembleDebug`. The build copies `remote/` into the APK. CI uploads a debug APK for every pull request.
 
 ## Release
 
-Push a tag `vX.Y.Z`. The release workflow builds the exe and publishes it with `SHA256SUMS.txt`. The update notice in the app offers only the latest stable release.
+Push a tag `vX.Y.Z`. The release workflow builds the exe and publishes it with `SHA256SUMS.txt`. It adds the signed APK when the repository has the secrets `WAYMARK_KEYSTORE_B64` (the keystore, base64), `WAYMARK_KEYSTORE_PASSWORD`, `WAYMARK_KEY_ALIAS` and `WAYMARK_KEY_PASSWORD`; the same APK then goes into the oros-fdroid repo. The update notice in the app offers only the latest stable release.
 
 ## Third-party code
 
 - [pdf.js](https://github.com/mozilla/pdf.js) 4.10.38, Apache-2.0, in `cmd/waymark-remote/frontend/vendor/pdfjs/`.
+- [jsQR](https://github.com/cozmo/jsQR) 1.4.0, Apache-2.0, in `../remote/vendor/`.
 - Go modules listed in `go.mod` (Wails MIT, Pion MIT, filippo.io/cpace BSD-3, go-ole MIT, golang.org/x BSD-3).

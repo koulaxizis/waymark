@@ -14,4 +14,6 @@ First version: presentation and files.
 - Operator auto-send folder per Agent (Proposal 6), one way only.
 - Keeps the laptop awake during a show; asks on close whether to delete received files.
 - New stable version notice from GitHub Releases, off in Settings; never during a show; no automatic install.
+- Controller in any browser (phone, tablet, laptop) at waymarked.site/remote/, nothing to install: the Agent shows a QR, the page shows a return code, they connect over an encrypted WebRTC data channel on the local network. Same roles, control key, presentation pad and files as the desktop Controller. The page loads once from the site; commands and files never pass through it. A browser that loses the link pairs again with a new QR.
+- Android app `site.waymarked.app`: the same page bundled in the APK, works offline, scans the QR, saves downloads into Downloads/Waymark, keeps the screen on while connected.
 - Greek and English, dark and light theme (pine green palette v1).
