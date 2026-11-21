@@ -1,0 +1,117 @@
+name: Waymark Remote release
+
+# A tag such as v0.1.0 builds every portable package and publishes a GitHub
+# Release with SHA256SUMS.txt: Windows exe, Linux AppImage, macOS .app (zip)
+# and, when the signing secrets exist, the Android APK. The app's update
+# notice reads the latest stable release, so tag only versions that passed
+# the tests on real machines. Tags with a suffix (v0.2.0-rc1) become
+# pre-releases and are not offered.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - run: go test ./internal/...
+      - name: Build
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
+            -ldflags "-s -w -H windowsgui -X main.Version=${V}" -o dist/WaymarkRemote-${V}-windows-x64.exe ./cmd/waymark-remote
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: app/dist/* }
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2 desktop-file-utils
+      - run: scripts/package.sh linux "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: app/dist/* }
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - run: scripts/package.sh macos "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with: { name: macos, path: app/dist/* }
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build the APK (signed only when the signing secrets exist)
+        env:
+          KEYSTORE_B64: ${{ secrets.WAYMARK_KEYSTORE_B64 }}
+          WAYMARK_KEYSTORE_PASSWORD: ${{ secrets.WAYMARK_KEYSTORE_PASSWORD }}
+          WAYMARK_KEY_ALIAS: ${{ secrets.WAYMARK_KEY_ALIAS }}
+          WAYMARK_KEY_PASSWORD: ${{ secrets.WAYMARK_KEY_PASSWORD }}
+        run: |
+          mkdir -p dist
+          if [ -z "$KEYSTORE_B64" ]; then echo "::warning::No signing secrets: the release has no APK"; exit 0; fi
+          V="${GITHUB_REF_NAME#v}"
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/waymark.jks"
+          cd app/android
+          WAYMARK_VERSION="$V" WAYMARK_KEYSTORE="$RUNNER_TEMP/waymark.jks" ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk ../../dist/Waymark-${V}-android.apk
+          rm -f "$RUNNER_TEMP/waymark.jks"
+      - uses: actions/upload-artifact@v4
+        with: { name: android, path: dist/*, if-no-files-found: ignore }
+
+  publish:
+    needs: [windows, linux, macos, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt && cd ..
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          NOTES="$(awk -v v="## ${GITHUB_REF_NAME#v}" '$0 ~ "^## " {p = index($0, v) == 1} p' app/CHANGELOG.md)"
+          gh release create "$GITHUB_REF_NAME" dist/* $PRE --title "Waymark Remote ${GITHUB_REF_NAME#v}" --notes "${NOTES:-See app/CHANGELOG.md}"

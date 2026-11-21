@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Waymark</string>
+    <string name="saved">Αποθηκεύτηκε στις Λήψεις: %1$s</string>
+    <string name="save_failed">Δεν αποθηκεύτηκε το αρχείο.</string>
+</resources>

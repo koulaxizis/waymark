@@ -1,0 +1,12 @@
+*.exe
+dist/
+*.waymark-part
+Waymark/
+Waymark Operator/
+Waymark data/
+waymark-remote.json
+e2e/node_modules/
+android/.gradle/
+android/local.properties
+android/build/
+android/app/build/

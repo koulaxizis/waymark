@@ -1,0 +1,46 @@
+name: Waymark Android
+
+# Builds the Android app (site.waymarked.app): a shell around the bundled
+# browser Controller page. Pull requests get a debug APK to install for tests.
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/android/**", "remote/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["app/android/**", "remote/**", ".github/workflows/android.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: app/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Build and lint
+        run: ./gradlew --no-daemon assembleDebug lintDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waymark-android-debug
+          path: app/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: waymark-android-lint
+          path: app/android/app/build/reports/lint-results-debug.html
+          retention-days: 14

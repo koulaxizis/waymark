@@ -1,0 +1,67 @@
+plugins {
+    id "com.android.application"
+}
+
+// The browser Controller page (remote/ on the site) is bundled, so the app
+// works offline and always matches its own version.
+def webSrc = file("$rootDir/../../remote")
+def webOut = layout.buildDirectory.dir("generated/web")
+def copyWeb = tasks.register("copyWeb", Copy) {
+    from(webSrc)
+    into(webOut.map { it.dir("remote") })
+}
+
+def ver = (System.getenv("WAYMARK_VERSION") ?: "0.1.0").replaceFirst(/^v/, "")
+def parts = ver.replaceAll(/-.*$/, "").tokenize(".").collect { it as int }
+def code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+android {
+    namespace "site.waymarked.app"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "site.waymarked.app"
+        minSdk 24
+        targetSdk 35
+        versionCode code
+        versionName ver
+    }
+
+    // Release signing comes from the environment (GitHub secrets). Without it
+    // the release build stays unsigned and the debug build is used for tests.
+    def ks = System.getenv("WAYMARK_KEYSTORE")
+    signingConfigs {
+        if (ks) {
+            release {
+                storeFile file(ks)
+                storePassword System.getenv("WAYMARK_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("WAYMARK_KEY_ALIAS")
+                keyPassword System.getenv("WAYMARK_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (ks) signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets {
+        main.assets.srcDirs += webOut
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Reproducible, no Google dependency info block (F-Droid).
+    dependenciesInfo {
+        includeInApk false
+        includeInBundle false
+    }
+}
+
+tasks.named("preBuild") { dependsOn copyWeb }
