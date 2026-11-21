@@ -55,7 +55,7 @@ jobs:
         with: { name: linux, path: app/dist/* }
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 20
     defaults:
       run:
