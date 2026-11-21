@@ -24,6 +24,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
@@ -58,8 +59,14 @@ public class MainActivity extends Activity {
         web = new WebView(this);
         web.setBackgroundColor(getColor(R.color.bg));
         // Android 15 draws apps edge to edge: keep the page clear of the
-        // status bar, the navigation bar and a camera cutout.
-        web.setOnApplyWindowInsetsListener((v, in) -> {
+        // status bar, the navigation bar and a camera cutout. WebView draws
+        // its page over its own padding, so the padding goes on a frame
+        // around it.
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(getColor(R.color.bg));
+        root.addView(web, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.setOnApplyWindowInsetsListener((v, in) -> {
             int l, t, r, b;
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
@@ -71,7 +78,8 @@ public class MainActivity extends Activity {
             v.setPadding(l, t, r, b);
             return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : in.consumeSystemWindowInsets();
         });
-        setContentView(web);
+        setContentView(root);
+        root.requestApplyInsets();
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
