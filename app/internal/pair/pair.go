@@ -22,6 +22,7 @@ import (
 	"filippo.io/cpace"
 
 	"github.com/koulaxizis/waymark/app/internal/code"
+	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/proto"
 	"github.com/koulaxizis/waymark/app/internal/secure"
 )
@@ -94,6 +95,10 @@ type Listener struct {
 	secret uint32
 	fails  int
 	pairs  map[string]*known
+	acceptOnce sync.Once
+	results    chan accepted
+	// listAddrs is ListAddrs as it was at Listen.
+	listAddrs func(port int) proto.AddrsData
 	// OnCode is called whenever the code changes (after a pairing or after
 	// MaxFails wrong attempts).
 	OnCode func()
@@ -110,7 +115,7 @@ func Listen(name string, role proto.Role) (*Listener, error) {
 		port := 49152 + int(randUint32()%16384)
 		ln, err = net.Listen("tcp4", ":"+strconv.Itoa(port))
 		if err == nil {
-			l := &Listener{Name: name, Role: role, ln: ln, port: port, pairs: map[string]*known{}}
+			l := &Listener{Name: name, Role: role, ln: ln, port: port, pairs: map[string]*known{}, listAddrs: ListAddrs}
 			l.secret = randUint32() & (1<<30 - 1)
 			return l, nil
 		}
@@ -135,6 +140,7 @@ func (l *Listener) Close() error { return l.ln.Close() }
 // Code is one way to type the Controller address.
 type Code struct {
 	Iface string `json:"iface"`
+	Kind  string `json:"kind"` // wired, wifi, cell, other
 	IP    string `json:"ip"`
 	Short string `json:"short"` // XXXX-XXXX-XXXX
 	Long  string `json:"long"`  // XXXX-XXXX-XXXX-XXXX
@@ -147,16 +153,28 @@ func (l *Listener) Codes() []Code {
 	secret := l.secret
 	l.mu.Unlock()
 	var out []Code
-	for _, ia := range code.InterfaceIPv4s() {
-		ip := net.ParseIP(ia[1]).To4()
-		pc := code.PairCode{IP: ip, Port: l.port, Secret: secret}
+	for _, f := range netif.List() {
+		pc := code.PairCode{IP: f.IP, Port: l.port, Secret: secret}
 		short, err := pc.Short()
 		if err != nil {
 			continue
 		}
-		out = append(out, Code{Iface: ia[0], IP: ia[1], Short: code.Group(short), Long: code.Group(pc.Long())})
+		out = append(out, Code{Iface: f.Name, Kind: f.Kind, IP: f.IP.String(), Short: code.Group(short), Long: code.Group(pc.Long())})
 	}
 	return out
+}
+
+// Addrs is every address of this Controller, best network first, for the
+// Agents to reconnect over another path when one is lost.
+func (l *Listener) Addrs() proto.AddrsData { return l.listAddrs(l.port) }
+
+// ListAddrs builds the address list; tests replace it.
+var ListAddrs = func(port int) proto.AddrsData {
+	d := proto.AddrsData{Port: port}
+	for _, f := range netif.List() {
+		d.Addrs = append(d.Addrs, proto.Addr{IP: f.IP.String(), Kind: f.Kind})
+	}
+	return d
 }
 
 // NewCode replaces the secret, so an old code stops working.
@@ -177,19 +195,41 @@ func (l *Listener) Forget(id string) {
 	l.mu.Unlock()
 }
 
-// Accept waits for the next Agent and runs the handshake. Errors from one
-// Agent are returned too; the caller logs them and calls Accept again.
+type accepted struct {
+	s   *Session
+	err error
+}
+
+// Accept waits for the next Agent and its handshake. Errors from one Agent
+// are returned too; the caller logs them and calls Accept again. Handshakes
+// run side by side, so a slow or silent connection never holds up a
+// reconnect on another path.
 func (l *Listener) Accept() (*Session, error) {
-	c, err := l.ln.Accept()
-	if err != nil {
-		return nil, err
+	l.acceptOnce.Do(func() {
+		l.results = make(chan accepted)
+		go func() {
+			for {
+				c, err := l.ln.Accept()
+				if err != nil {
+					l.results <- accepted{err: err}
+					close(l.results)
+					return
+				}
+				go func(c net.Conn) {
+					s, err := l.handshake(c)
+					if err != nil {
+						c.Close()
+					}
+					l.results <- accepted{s, err}
+				}(c)
+			}
+		}()
+	})
+	r, ok := <-l.results
+	if !ok {
+		return nil, net.ErrClosed
 	}
-	s, err := l.handshake(c)
-	if err != nil {
-		c.Close()
-		return nil, err
-	}
-	return s, nil
+	return r.s, r.err
 }
 
 func (l *Listener) handshake(c net.Conn) (*Session, error) {
@@ -304,12 +344,45 @@ func pairID(key []byte) string { return secure.B64(secure.MAC(key, []byte("pair-
 
 // Pairing is what the Agent keeps to reconnect without a code.
 type Pairing struct {
-	Addr     string
 	ID       string
 	Key      []byte
 	Until    time.Time
 	PeerName string
 	Role     proto.Role
+
+	mu    sync.Mutex
+	addrs []proto.Addr // the Controller's addresses, best first
+	port  int
+}
+
+// Path is one way to the Controller: its address and the kind of network.
+type Path struct {
+	Addr string // ip:port
+	Kind string
+}
+
+// SetAddrs stores the Controller's current addresses (a TAddrs message).
+func (p *Pairing) SetAddrs(d proto.AddrsData) {
+	if d.Port <= 0 || d.Port > 65535 || len(d.Addrs) == 0 {
+		return
+	}
+	p.mu.Lock()
+	p.port = d.Port
+	p.addrs = append([]proto.Addr(nil), d.Addrs...)
+	p.mu.Unlock()
+}
+
+// Paths lists where to try, best first.
+func (p *Pairing) Paths() []Path {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]Path, 0, len(p.addrs))
+	for _, a := range p.addrs {
+		if ip := net.ParseIP(a.IP).To4(); ip != nil {
+			out = append(out, Path{Addr: net.JoinHostPort(ip.String(), strconv.Itoa(p.port)), Kind: a.Kind})
+		}
+	}
+	return out
 }
 
 // Prompt asks the presenter to accept: it shows the number, who asks and in
@@ -385,18 +458,107 @@ func Dial(typed, agentName string, prompt Prompt) (*Pairing, *secure.Conn, error
 		conn.Close()
 		return nil, nil, err
 	}
-	return &Pairing{Addr: addr, ID: id, Key: key, Until: time.Now().Add(KeyLife), PeerName: r.Name, Role: granted}, sc, nil
+	host, _, _ := net.SplitHostPort(addr)
+	return &Pairing{ID: id, Key: key, Until: time.Now().Add(KeyLife), PeerName: r.Name, Role: granted,
+		port: p.Port, addrs: []proto.Addr{{IP: host, Kind: netif.Other}}}, sc, nil
 }
 
-// Resume re-authenticates with the stored key; no code needed.
-func Resume(p *Pairing) (*secure.Conn, error) {
+// PreferWait is how long a reconnect waits for a better path once a worse
+// one has answered: a cable that answers a moment after Wi-Fi still wins.
+var PreferWait = 300 * time.Millisecond
+
+// DialTimeout bounds each connection attempt.
+var DialTimeout = 1500 * time.Millisecond
+
+// Resume re-authenticates with the stored key over the best path that
+// answers; no code needed. It returns the path it used.
+func Resume(p *Pairing) (*secure.Conn, Path, error) {
+	return ResumeOver(p, p.Paths())
+}
+
+// ResumeOver is Resume limited to some paths (best first), for example to
+// move back to a cable while Wi-Fi still works.
+func ResumeOver(p *Pairing, paths []Path) (*secure.Conn, Path, error) {
 	if time.Now().After(p.Until) {
-		return nil, errors.New("pairing expired, a new code is needed")
+		return nil, Path{}, errors.New("pairing expired, a new code is needed")
 	}
-	conn, err := net.DialTimeout("tcp4", p.Addr, 2*time.Second)
+	if len(paths) == 0 {
+		return nil, Path{}, errors.New("no address of the Controller is known")
+	}
+	conn, i, err := dialBest(paths)
 	if err != nil {
-		return nil, err
+		return nil, Path{}, err
 	}
+	sc, err := resumeOn(p, conn)
+	if err != nil {
+		return nil, Path{}, err
+	}
+	return sc, paths[i], nil
+}
+
+// dialBest dials every path at once and keeps the best one that answers,
+// waiting PreferWait after the first answer for a better one.
+func dialBest(paths []Path) (net.Conn, int, error) {
+	type res struct {
+		c net.Conn
+		i int
+		e error
+	}
+	ch := make(chan res, len(paths))
+	for i, pt := range paths {
+		go func(i int, a string) {
+			c, err := net.DialTimeout("tcp4", a, DialTimeout)
+			ch <- res{c, i, err}
+		}(i, pt.Addr)
+	}
+	var best *res
+	var first error
+	var grace <-chan time.Time
+	left := len(paths)
+wait:
+	for left > 0 {
+		select {
+		case r := <-ch:
+			left--
+			switch {
+			case r.e != nil:
+				if first == nil {
+					first = r.e
+				}
+			case best == nil || r.i < best.i:
+				if best != nil {
+					best.c.Close()
+				}
+				rr := r
+				best = &rr
+				if best.i == 0 {
+					break wait
+				}
+				if grace == nil {
+					grace = time.After(PreferWait)
+				}
+			default:
+				r.c.Close()
+			}
+		case <-grace:
+			break wait
+		}
+	}
+	// Close whatever answers after the choice.
+	go func(n int) {
+		for ; n > 0; n-- {
+			if r := <-ch; r.e == nil {
+				r.c.Close()
+			}
+		}
+	}(left)
+	if best == nil {
+		return nil, 0, first
+	}
+	return best.c, best.i, nil
+}
+
+func resumeOn(p *Pairing, conn net.Conn) (*secure.Conn, error) {
 	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	nA := secure.RandBytes(16)
 	if err := secure.WriteJSON(conn, hello{T: "resume", ID: p.ID, N: secure.B64(nA)}); err != nil {

@@ -24,6 +24,7 @@ const (
 	TEvent    = "event"     // Agent -> all, e.g. a new file from the secretariat
 	TFileData = "file.data" // Agent -> one Controller, a download chunk
 	TBye      = "bye"       // either side, closing on purpose
+	TAddrs    = "addrs"     // Controller -> Agent, where else to reach it
 )
 
 // Commands. The Agent runs these and nothing else: no shell, no arbitrary files.
@@ -144,6 +145,21 @@ type Peer struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Role Role   `json:"role"`
+	Path string `json:"path,omitempty"` // network of the link now: wired, wifi, cell, other
+}
+
+// Addr is one address of the Controller, with the kind of network it is on
+// (wired, wifi, cell, other). The list is sent best first.
+type Addr struct {
+	IP   string `json:"ip"`
+	Kind string `json:"kind"`
+}
+
+// AddrsData is the body of a TAddrs message: every address the Agent can
+// try, so a reconnect can move from a cable to Wi-Fi and back.
+type AddrsData struct {
+	Port  int    `json:"port"`
+	Addrs []Addr `json:"addrs"`
 }
 
 // State is what the Agent reports on every change and every 5 s.

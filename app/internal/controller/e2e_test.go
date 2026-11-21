@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -89,7 +90,11 @@ func (u *agentUI) Event(e proto.Event) {
 	u.evs = append(u.evs, e)
 	u.mu.Unlock()
 }
-func (u *agentUI) Log(string, ...any) {}
+func (u *agentUI) Log(f string, a ...any) {
+	if os.Getenv("WM_LOG") != "" {
+		fmt.Printf("agent: "+f+"\n", a...)
+	}
+}
 
 type ctrlUI struct {
 	mu  sync.Mutex
@@ -105,7 +110,11 @@ func (u *ctrlUI) SAS(sas, _ string) {
 func (u *ctrlUI) Agents([]controller.AgentInfo) {}
 func (u *ctrlUI) Event(string, proto.Event)     {}
 func (u *ctrlUI) Progress(controller.Progress)  {}
-func (u *ctrlUI) Log(string, ...any)            {}
+func (u *ctrlUI) Log(f string, a ...any) {
+	if os.Getenv("WM_LOG") != "" {
+		fmt.Printf("ctrl: "+f+"\n", a...)
+	}
+}
 
 func loopCode(t *testing.T, c *controller.Controller, port int) string {
 	t.Helper()

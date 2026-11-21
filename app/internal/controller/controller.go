@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,15 +21,21 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/proto"
 	"github.com/koulaxizis/waymark/app/internal/secure"
 )
 
+// Timings (Proposal 13): ping every 1 s, a link is lost after 3 s of
+// silence. A slide command that was sent but not answered waits up to
+// HoldFor for the Agent to come back (over any path) and is sent again; the
+// Agent's sequence numbers make sure it runs once.
 var (
-	PingEvery   = 2 * time.Second
-	LostAfter   = 6 * time.Second
+	PingEvery   = time.Second
+	LostAfter   = 3 * time.Second
 	CallTimeout = 15 * time.Second
+	HoldFor     = 10 * time.Second
 )
 
 // UI receives what the Controller window shows.
@@ -47,6 +54,7 @@ type AgentInfo struct {
 	Name      string       `json:"name"`
 	Role      proto.Role   `json:"role"` // granted by the Agent
 	Online    bool         `json:"online"`
+	Path      string       `json:"path,omitempty"` // wired, wifi, cell, other
 	LatencyMs int64        `json:"latencyMs"`
 	State     *proto.State `json:"state,omitempty"`
 	Holder    bool         `json:"holder"` // this Controller holds the key
@@ -71,18 +79,60 @@ type Controller struct {
 	mu     sync.Mutex
 	agents map[string]*link
 	idn    atomic.Uint64
+	addrs  string // the last address list sent, as JSON
 }
 
 type link struct {
 	id, name string
 	role     proto.Role
 	conn     *secure.Conn
+	path     string
 	state    *proto.State
 	latency  time.Duration
 	seq      uint64
-	pending  map[string]chan proto.Msg
+	pending  map[string]*pend
 	streams  map[string]chan proto.Msg
 	mu       sync.Mutex
+}
+
+// pend is a command waiting for its answer. Slide and control commands
+// (Seq > 0) survive a lost link and are sent again on the next one.
+type pend struct {
+	ch     chan proto.Msg
+	msg    proto.Msg
+	resent bool
+	lostAt time.Time
+}
+
+// keepsOverLoss tells which pending commands wait for the next link.
+func (p *pend) keepsOverLoss() bool { return p.msg.Seq > 0 }
+
+// dropPending fails the commands that cannot wait, or all of them, and
+// remembers when the rest started waiting. Call with a.mu held.
+func (a *link) dropPending(all bool) {
+	now := time.Now()
+	for id, p := range a.pending {
+		if all || !p.keepsOverLoss() {
+			close(p.ch)
+			delete(a.pending, id)
+		} else if p.lostAt.IsZero() {
+			p.lostAt = now
+		}
+	}
+	for id, ch := range a.streams {
+		close(ch)
+		delete(a.streams, id)
+	}
+}
+
+// resend sends the waiting commands on a new link. Call with a.mu held.
+func (a *link) resend(conn *secure.Conn) {
+	for _, p := range a.pending {
+		if p.keepsOverLoss() {
+			p.resent, p.lostAt = true, time.Time{}
+			go conn.Send(p.msg)
+		}
+	}
 }
 
 // New listens and starts accepting Agents.
@@ -122,8 +172,13 @@ func (c *Controller) accept() {
 	for {
 		s, err := c.l.Accept()
 		if err != nil {
-			if errors.Is(err, os.ErrClosed) || isClosed(err) {
+			// Only the listener closing ends the loop; a handshake that
+			// fails (EOF from a probe, a wrong code) does not.
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed) {
 				return
+			}
+			if errors.Is(err, io.EOF) {
+				continue // a spare path the Agent tried and dropped
 			}
 			c.ui.Log("pairing failed: %v", err)
 			continue
@@ -131,16 +186,22 @@ func (c *Controller) accept() {
 		c.mu.Lock()
 		a := c.agents[s.ID]
 		if a == nil {
-			a = &link{id: s.ID, pending: map[string]chan proto.Msg{}, streams: map[string]chan proto.Msg{}}
+			a = &link{id: s.ID, pending: map[string]*pend{}, streams: map[string]chan proto.Msg{}}
 			c.agents[s.ID] = a
 		}
 		a.mu.Lock()
 		if a.conn != nil {
+			// The Agent moved to another path: answers on the old link are
+			// lost, so the waiting commands go again on the new one.
 			a.conn.Close()
+			a.dropPending(false)
 		}
 		a.name, a.role, a.conn = s.AgentName, s.Role, s.Conn
+		a.path = pathOf(s.Conn)
+		a.resend(s.Conn)
 		a.mu.Unlock()
 		c.mu.Unlock()
+		s.Conn.Send(c.addrsMsg())
 		if s.Resumed {
 			c.ui.Log("%s reconnected", s.AgentName)
 		} else {
@@ -149,6 +210,18 @@ func (c *Controller) accept() {
 		go c.read(a, s.Conn)
 		c.pushAgents()
 	}
+}
+
+func pathOf(conn *secure.Conn) string {
+	if ta, ok := conn.LocalAddr().(*net.TCPAddr); ok {
+		return netif.KindOf(ta.IP)
+	}
+	return netif.Other
+}
+
+func (c *Controller) addrsMsg() proto.Msg {
+	b, _ := json.Marshal(c.l.Addrs())
+	return proto.Msg{V: proto.Version, T: proto.TAddrs, Data: b}
 }
 
 func isClosed(err error) bool {
@@ -164,14 +237,7 @@ func (c *Controller) read(a *link, conn *secure.Conn) {
 		a.mu.Lock()
 		if a.conn == conn {
 			a.conn = nil
-			for id, ch := range a.pending {
-				close(ch)
-				delete(a.pending, id)
-			}
-			for id, ch := range a.streams {
-				close(ch)
-				delete(a.streams, id)
-			}
+			a.dropPending(false)
 		}
 		a.mu.Unlock()
 		conn.Close()
@@ -203,15 +269,19 @@ func (c *Controller) read(a *link, conn *secure.Conn) {
 			}
 		case proto.TOK, proto.TError:
 			a.mu.Lock()
-			ch := a.pending[m.ID]
+			pd := a.pending[m.ID]
 			delete(a.pending, m.ID)
 			st := a.streams[m.ID]
 			if m.T == proto.TError {
 				delete(a.streams, m.ID)
 			}
 			a.mu.Unlock()
-			if ch != nil {
-				ch <- m
+			if pd != nil {
+				if pd.resent && m.T == proto.TError && m.Code == proto.ErrStale {
+					// It ran before the link dropped; only the answer was lost.
+					m = proto.Msg{V: m.V, T: proto.TOK, ID: m.ID, Cmd: m.Cmd}
+				}
+				pd.ch <- m
 			} else if st != nil && m.T == proto.TError {
 				st <- m
 				close(st)
@@ -239,12 +309,28 @@ func (c *Controller) read(a *link, conn *secure.Conn) {
 func (c *Controller) pinger() {
 	for {
 		time.Sleep(PingEvery)
+		am := c.addrsMsg()
 		c.mu.Lock()
+		changed := string(am.Data) != c.addrs
+		c.addrs = string(am.Data)
 		links := make([]*link, 0, len(c.agents))
 		for _, a := range c.agents {
 			links = append(links, a)
 		}
 		c.mu.Unlock()
+		for _, a := range links {
+			a.mu.Lock()
+			if changed && a.conn != nil {
+				go a.conn.Send(am)
+			}
+			for id, p := range a.pending {
+				if !p.lostAt.IsZero() && time.Since(p.lostAt) > HoldFor {
+					close(p.ch)
+					delete(a.pending, id)
+				}
+			}
+			a.mu.Unlock()
+		}
 		for _, a := range links {
 			go func(a *link) {
 				t0 := time.Now()
@@ -271,6 +357,9 @@ func (c *Controller) Agents() []AgentInfo {
 	for _, a := range links {
 		a.mu.Lock()
 		ai := AgentInfo{ID: a.id, Name: a.name, Role: a.role, Online: a.conn != nil, LatencyMs: a.latency.Milliseconds(), State: a.state}
+		if a.conn != nil {
+			ai.Path = a.path
+		}
 		if a.state != nil && a.state.Holder != nil && a.state.Holder.ID == a.id {
 			ai.Holder = true
 		}
@@ -341,7 +430,7 @@ func (c *Controller) send(a *link, cmd string, args any, withSeq bool, stream ch
 		a.seq++
 		m.Seq = a.seq
 	}
-	a.pending[id] = ch
+	a.pending[id] = &pend{ch: ch, msg: m}
 	if stream != nil {
 		a.streams[id] = stream
 	}

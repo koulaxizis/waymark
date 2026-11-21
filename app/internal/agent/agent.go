@@ -14,17 +14,21 @@ import (
 	"time"
 
 	"github.com/koulaxizis/waymark/app/internal/files"
+	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/pres"
 	"github.com/koulaxizis/waymark/app/internal/proto"
 )
 
-// Timings of the Doc: state every 5 s, a link is lost after 6 s of silence,
-// retry every 2 s, the key passes on after the holder is gone for 10 s.
+// Timings (Proposal 13): state every 5 s, the Controller pings every 1 s, a
+// link is lost after 3 s of silence, retry every 1 s over every known path,
+// look for a better path (cable over Wi-Fi) every 5 s, the key passes on
+// after the holder is gone for 10 s.
 var (
 	StateEvery   = 5 * time.Second
-	LostAfter    = 6 * time.Second
-	RetryEvery   = 2 * time.Second
+	LostAfter    = 3 * time.Second
+	RetryEvery   = time.Second
+	UpgradeEvery = 5 * time.Second
 	HolderGrace  = 10 * time.Second
 	downloadPace = time.Duration(0)
 )
@@ -70,6 +74,7 @@ type peer struct {
 	info    proto.Peer
 	pairing *pair.Pairing // nil for a browser: it cannot resume, it pairs again
 	conn    Link          // nil while reconnecting
+	path    pair.Path     // the network conn runs over (flow A)
 	lastSeq uint64
 	stop    chan struct{}
 }
@@ -94,6 +99,9 @@ func (a *Agent) Connect(code string) error {
 		return err
 	}
 	p := &peer{info: proto.Peer{ID: pr.ID, Name: pr.PeerName, Role: pr.Role}, pairing: pr, conn: conn, stop: make(chan struct{})}
+	if ps := pr.Paths(); len(ps) > 0 {
+		p.path = ps[0]
+	}
 	a.mu.Lock()
 	if old := a.peers[pr.ID]; old != nil {
 		close(old.stop)
@@ -105,6 +113,7 @@ func (a *Agent) Connect(code string) error {
 	a.mu.Unlock()
 	a.ui.Log("connected: %s (%s)", pr.PeerName, pr.Role)
 	go a.keep(p)
+	go a.upgrade(p)
 	a.changed()
 	return nil
 }
@@ -128,16 +137,28 @@ func (a *Agent) Attach(id, name string, role proto.Role, l Link) {
 	a.changed()
 }
 
-// keep runs sessions and reconnects every 2 s after a loss.
+// keep serves the link and, after a loss, reconnects every RetryEvery over
+// every path it knows (cable, Wi-Fi, mobile data), best first. When upgrade
+// moves the link to a better path, keep simply goes on with the new one.
 func (a *Agent) keep(p *peer) {
+	a.mu.Lock()
+	c := p.conn
+	a.mu.Unlock()
 	for {
-		err := a.serve(p)
-		a.ui.Log("link to %s ended: %v", p.info.Name, err)
+		err := a.serve(p, c)
 		select {
 		case <-p.stop:
 			return
 		default:
 		}
+		a.mu.Lock()
+		if p.conn != nil && p.conn != c {
+			c = p.conn // moved to a better path
+			a.mu.Unlock()
+			continue
+		}
+		a.mu.Unlock()
+		a.ui.Log("link to %s ended: %v", p.info.Name, err)
 		if p.pairing == nil {
 			a.drop(p.info.ID)
 			return
@@ -147,41 +168,99 @@ func (a *Agent) keep(p *peer) {
 		a.lostAt[p.info.ID] = time.Now()
 		a.mu.Unlock()
 		a.changed()
-		for {
+		c = nil
+		for try := 0; c == nil; try++ {
+			wait := RetryEvery
+			if try == 0 {
+				wait = 0 // the first try right away, on every path
+			}
 			select {
 			case <-p.stop:
 				return
-			case <-time.After(RetryEvery):
+			case <-time.After(wait):
 			}
-			c, err := pair.Resume(p.pairing)
-			if err == nil {
-				a.mu.Lock()
-				select {
-				case <-p.stop:
-					a.mu.Unlock()
-					c.Close()
+			nc, path, err := pair.Resume(p.pairing)
+			if err != nil {
+				if time.Now().After(p.pairing.Until) {
+					a.drop(p.info.ID)
 					return
-				default:
 				}
-				p.conn = c
-				delete(a.lostAt, p.info.ID)
+				continue
+			}
+			a.mu.Lock()
+			select {
+			case <-p.stop:
 				a.mu.Unlock()
-				a.ui.Log("reconnected to %s", p.info.Name)
-				a.changed()
-				break
-			}
-			if time.Now().After(p.pairing.Until) {
-				a.drop(p.info.ID)
+				nc.Close()
 				return
+			default:
 			}
+			p.conn, p.path, c = nc, path, nc
+			delete(a.lostAt, p.info.ID)
+			a.mu.Unlock()
+			a.ui.Log("reconnected to %s over %s", p.info.Name, kindName(path.Kind))
+			a.changed()
 		}
 	}
 }
 
-func (a *Agent) serve(p *peer) error {
-	a.mu.Lock()
-	c := p.conn
-	a.mu.Unlock()
+// upgrade moves a working link to a better path when one answers, for
+// example back to the cable after the link fell over to Wi-Fi.
+func (a *Agent) upgrade(p *peer) {
+	for {
+		select {
+		case <-p.stop:
+			return
+		case <-time.After(UpgradeEvery):
+		}
+		a.mu.Lock()
+		cur, rank := p.conn, netif.Rank(p.path.Kind)
+		a.mu.Unlock()
+		if cur == nil {
+			continue
+		}
+		var better []pair.Path
+		for _, pt := range p.pairing.Paths() {
+			if netif.Rank(pt.Kind) < rank {
+				better = append(better, pt)
+			}
+		}
+		if len(better) == 0 {
+			continue
+		}
+		nc, path, err := pair.ResumeOver(p.pairing, better)
+		if err != nil {
+			continue
+		}
+		a.mu.Lock()
+		if p.conn != cur {
+			a.mu.Unlock()
+			nc.Close()
+			continue
+		}
+		p.conn, p.path = nc, path
+		a.mu.Unlock()
+		// The Controller switches when the new link arrives; the old one
+		// stays a moment so nothing in flight on it is lost.
+		time.AfterFunc(time.Second, func() { cur.Close() }) // keep then goes on with the new link
+		a.ui.Log("link to %s moved to %s", p.info.Name, kindName(path.Kind))
+		a.changed()
+	}
+}
+
+func kindName(k string) string {
+	switch k {
+	case netif.Wired:
+		return "the cable"
+	case netif.WiFi:
+		return "Wi-Fi"
+	case netif.Cell:
+		return "mobile data"
+	}
+	return "another network"
+}
+
+func (a *Agent) serve(p *peer, c Link) error {
 	if c == nil {
 		return errors.New("no connection")
 	}
@@ -199,6 +278,24 @@ func (a *Agent) serve(p *peer) error {
 		}
 		if m.T == proto.TBye {
 			return io.EOF
+		}
+		if m.T == proto.TAddrs && p.pairing != nil {
+			var d proto.AddrsData
+			if json.Unmarshal(m.Data, &d) == nil {
+				p.pairing.SetAddrs(d)
+				moved := false
+				a.mu.Lock()
+				for _, pt := range p.pairing.Paths() {
+					if pt.Addr == p.path.Addr && p.conn == c && pt.Kind != p.path.Kind {
+						p.path.Kind, moved = pt.Kind, true
+					}
+				}
+				a.mu.Unlock()
+				if moved {
+					a.changed()
+				}
+			}
+			continue
 		}
 		if m.T != proto.TCmd {
 			continue
@@ -500,7 +597,9 @@ func (a *Agent) State() proto.State {
 	}
 	for _, p := range a.peers {
 		if p.conn != nil {
-			s.Peers = append(s.Peers, p.info)
+			pi := p.info
+			pi.Path = p.path.Kind
+			s.Peers = append(s.Peers, pi)
 		}
 	}
 	sort.Slice(s.Peers, func(i, j int) bool { return s.Peers[i].Name < s.Peers[j].Name })

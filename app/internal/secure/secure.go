@@ -195,4 +195,7 @@ func (s *Conn) SetReadDeadline(t time.Time) error { return s.c.SetReadDeadline(t
 // RemoteAddr is the peer address.
 func (s *Conn) RemoteAddr() net.Addr { return s.c.RemoteAddr() }
 
+// LocalAddr is the local end, which tells the network the link runs over.
+func (s *Conn) LocalAddr() net.Addr { return s.c.LocalAddr() }
+
 func (s *Conn) Close() error { return s.c.Close() }
