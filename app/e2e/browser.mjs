@@ -12,7 +12,7 @@ const browser = await chromium.launch({
   args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
 });
 try {
-  const ctx = await browser.newContext({ acceptDownloads: true, permissions: ["camera"] });
+  const ctx = await browser.newContext({ acceptDownloads: true, permissions: ["camera"], bypassCSP: true });
   const page = await ctx.newPage();
   // WM_SHOTS=<dir> keeps phone-size screenshots of each step.
   const shots = process.env.WM_SHOTS;
