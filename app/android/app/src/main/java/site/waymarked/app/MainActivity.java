@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
@@ -55,6 +56,21 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         web = new WebView(this);
+        web.setBackgroundColor(getColor(R.color.bg));
+        // Android 15 draws apps edge to edge: keep the page clear of the
+        // status bar, the navigation bar and a camera cutout.
+        web.setOnApplyWindowInsetsListener((v, in) -> {
+            int l, t, r, b;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                l = i.left; t = i.top; r = i.right; b = i.bottom;
+            } else {
+                l = in.getSystemWindowInsetLeft(); t = in.getSystemWindowInsetTop();
+                r = in.getSystemWindowInsetRight(); b = in.getSystemWindowInsetBottom();
+            }
+            v.setPadding(l, t, r, b);
+            return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : in.consumeSystemWindowInsets();
+        });
         setContentView(web);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
