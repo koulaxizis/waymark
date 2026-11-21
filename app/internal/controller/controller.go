@@ -144,6 +144,13 @@ func New(name string, role proto.Role, ui UI) (*Controller, error) {
 	c := &Controller{l: l, ui: ui, agents: map[string]*link{}}
 	l.OnSAS = ui.SAS
 	l.OnCode = func() { ui.Codes(l.Codes()) }
+	l.OnRelay = func(err error) {
+		if err != nil {
+			ui.Log("relay: %v", err)
+		} else {
+			ui.Log("relay ready")
+		}
+	}
 	go c.accept()
 	go c.pinger()
 	return c, nil
@@ -151,6 +158,10 @@ func New(name string, role proto.Role, ui UI) (*Controller, error) {
 
 // Codes returns the current pairing codes.
 func (c *Controller) Codes() []pair.Code { return c.l.Codes() }
+
+// SetRelay sets the relay the Agents fall back to over the internet when
+// no network path answers; an empty url turns it off (Proposal 13, 0.1.1).
+func (c *Controller) SetRelay(url, key string) { c.l.SetRelay(url, key) }
 
 // NewCode replaces the code.
 func (c *Controller) NewCode() { c.l.NewCode() }
@@ -213,6 +224,9 @@ func (c *Controller) accept() {
 }
 
 func pathOf(conn *secure.Conn) string {
+	if conn.LocalAddr().Network() == "relay" {
+		return netif.Relay
+	}
 	if ta, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 		return netif.KindOf(ta.IP)
 	}

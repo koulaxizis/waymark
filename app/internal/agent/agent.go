@@ -374,6 +374,8 @@ func kindName(k string) string {
 		return "Wi-Fi"
 	case netif.Cell:
 		return "mobile data"
+	case netif.Relay:
+		return "the relay"
 	}
 	return "another network"
 }

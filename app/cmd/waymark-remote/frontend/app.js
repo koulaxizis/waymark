@@ -68,8 +68,9 @@ function showMode(mode) {
 function wireCommon() {
   $("btnSettings").onclick = openSettings;
   $("btnSaveSettings").onclick = async () => {
-    const c = { ...info.config, lang: $("sLang").value, theme: $("sTheme").value, name: $("sName").value, updateCheck: $("sUpdate").checked };
-    await go().SaveSettings(c);
+    const c = { ...info.config, lang: $("sLang").value, theme: $("sTheme").value, name: $("sName").value, updateCheck: $("sUpdate").checked,
+      relayUrl: $("sRelayUrl").value.trim(), relayKey: $("sRelayKey").value.trim() };
+    try { await go().SaveSettings(c); } catch (e) { $("checkMsg").textContent = String(e?.message || e); return; }
     info = await go().GetInfo();
     setLang(c.lang); setTheme(c.theme); applyI18n(); refreshLabels();
     $("settingsDlg").close();
@@ -101,6 +102,10 @@ function openSettings() {
   $("sTheme").value = document.documentElement.dataset.theme;
   $("sName").value = info.config.name || "";
   $("sUpdate").checked = !!info.config.updateCheck;
+  $("sRelayUrl").value = info.config.relayUrl || "";
+  $("sRelayKey").value = info.config.relayKey || "";
+  // Only a Controller offers a relay; an Agent learns it from its Controller.
+  $("sRelayBox").hidden = info.running === "agent" || info.config.mode === "agent";
   $("sVersion").textContent = info.version;
   $("checkMsg").textContent = "";
   $("settingsDlg").showModal();
@@ -229,7 +234,7 @@ function closeInvite() {
 }
 
 function pathLabel(k) {
-  return T("pathNote", T("path_" + (["wired", "wifi", "cell"].includes(k) ? k : "other")));
+  return T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay"].includes(k) ? k : "other")));
 }
 
 async function resumePhone() {

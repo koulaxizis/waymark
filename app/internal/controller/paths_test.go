@@ -3,6 +3,7 @@ package controller_test
 import (
 	"io"
 	"net"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/koulaxizis/waymark/app/internal/agent"
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/proto"
+	"github.com/koulaxizis/waymark/app/internal/relay"
 )
 
 // path is a TCP forwarder that stands for one network (a cable, Wi-Fi). cut
@@ -95,6 +97,12 @@ func (p *path) cut() {
 	}
 }
 
+var upgradeOnce sync.Once
+
+// fastUpgrade shortens the upgrade check once: Agents of an earlier test may
+// still read it.
+func fastUpgrade() { upgradeOnce.Do(func() { agent.UpgradeEvery = 300 * time.Millisecond }) }
+
 func agentPath(a *agent.Agent) string {
 	for _, pe := range a.State().Peers {
 		return pe.Path
@@ -117,7 +125,7 @@ func waitFor(t *testing.T, what string, d time.Duration, ok func() bool) {
 // the cable goes silent (a slide command in flight runs exactly once), and
 // moves back to the cable when it returns (Proposal 13).
 func TestPathFailover(t *testing.T) {
-	agent.UpgradeEvery = 300 * time.Millisecond
+	fastUpgrade()
 	l, err := net.Listen("tcp4", "127.0.0.2:0")
 	if err != nil {
 		t.Skip("no 127.0.0.2:", err)
@@ -163,6 +171,74 @@ func TestPathFailover(t *testing.T) {
 	}
 
 	// The cable comes back.
+	wired.up()
+	waitFor(t, "the move back to the cable", 5*time.Second, func() bool { return agentPath(a) == "wired" })
+	if _, err := c.Call(id, proto.CmdPresNext, nil); err != nil {
+		t.Fatal(err)
+	}
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if fd.slide != 5 {
+		t.Fatalf("slide %d, want 5", fd.slide)
+	}
+}
+
+// TestRelayFailover: with no network left the link goes over the relay, a
+// slide command runs once, and the link moves back when the cable returns
+// (Proposal 13, 0.1.1). The relay needs its access key.
+func TestRelayFailover(t *testing.T) {
+	fastUpgrade()
+	l, err := net.Listen("tcp4", "127.0.0.2:0")
+	if err != nil {
+		t.Skip("no 127.0.0.2:", err)
+	}
+	pport := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	pair.ListAddrs = func(int) proto.AddrsData {
+		return proto.AddrsData{Port: pport, Addrs: []proto.Addr{{IP: "127.0.0.2", Kind: "wired"}}}
+	}
+	// WM_RELAY_URL and WM_RELAY_KEY run it through a Worker (wrangler dev).
+	ru, rk := os.Getenv("WM_RELAY_URL"), os.Getenv("WM_RELAY_KEY")
+	if ru == "" {
+		srv := httptest.NewServer(relay.Handler("sesame"))
+		t.Cleanup(srv.Close)
+		ru, rk = srv.URL, "sesame"
+	}
+	a, c, fd, id, _ := setup(t, proto.RoleOperator, "")
+	target := "127.0.0.1:" + strconv.Itoa(portOf(t, c))
+	wired := newPath(t, "127.0.0.2", pport, target)
+	c.SetRelay(ru, rk)
+
+	waitFor(t, "the move to the cable", 5*time.Second, func() bool { return agentPath(a) == "wired" })
+	time.Sleep(1200 * time.Millisecond)
+	if err := c.Take(id); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(a.Store().Root(), "talk.pdf"), []byte("%PDF-1.4"), 0o644)
+	if _, err := c.Call(id, proto.CmdPresOpen, proto.OpenArgs{Path: "talk.pdf"}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	fd.mu.Lock()
+	fd.slide, fd.state = 3, proto.StatusShowing
+	fd.mu.Unlock()
+
+	wired.cut()
+	t0 := time.Now()
+	if _, err := c.Call(id, proto.CmdPresNext, nil); err != nil {
+		t.Fatalf("next across the failover: %v", err)
+	}
+	t.Logf("next answered over %s after %v", agentPath(a), time.Since(t0).Round(time.Millisecond))
+	waitFor(t, "the relay", 5*time.Second, func() bool { return agentPath(a) == "relay" })
+	if p := c.Agents()[0].Path; p != "relay" {
+		t.Errorf("controller shows path %q, want relay", p)
+	}
+	fd.mu.Lock()
+	slide := fd.slide
+	fd.mu.Unlock()
+	if slide != 4 {
+		t.Fatalf("slide %d after one Next, want 4", slide)
+	}
+
 	wired.up()
 	waitFor(t, "the move back to the cable", 5*time.Second, func() bool { return agentPath(a) == "wired" })
 	if _, err := c.Call(id, proto.CmdPresNext, nil); err != nil {

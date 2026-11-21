@@ -18,6 +18,7 @@ import (
 	"github.com/koulaxizis/waymark/app/internal/agent"
 	"github.com/koulaxizis/waymark/app/internal/controller"
 	"github.com/koulaxizis/waymark/app/internal/proto"
+	"github.com/koulaxizis/waymark/app/internal/relay"
 	"github.com/koulaxizis/waymark/app/internal/rtc"
 )
 
@@ -31,6 +32,10 @@ type Config struct {
 	Folder      string     `json:"folder"`      // Agent folder; "" = Waymark next to the exe
 	UpdateCheck bool       `json:"updateCheck"` // look for a new stable version at start
 	App         string     `json:"app"`         // preferred application: auto, powerpoint, viewer, ...
+	// RelayURL and RelayKey: the relay a Controller offers its Agents for
+	// when they share no network (0.1.1). Off when RelayURL is empty.
+	RelayURL string `json:"relayUrl"`
+	RelayKey string `json:"relayKey"`
 }
 
 // App is bound to the frontend: every exported method is callable from JS.
@@ -122,6 +127,13 @@ func (a *App) SaveSettings(c Config) error {
 	}
 	if n := strings.TrimSpace(c.Name); n != "" {
 		a.cfg.Name = n
+	}
+	a.cfg.RelayURL, a.cfg.RelayKey = strings.TrimSpace(c.RelayURL), strings.TrimSpace(c.RelayKey)
+	if a.cfg.RelayURL != "" && relay.CleanURL(a.cfg.RelayURL) == "" {
+		return errors.New("the relay address is not a web address")
+	}
+	if a.ctrl != nil {
+		a.ctrl.SetRelay(a.cfg.RelayURL, a.cfg.RelayKey)
 	}
 	return a.save()
 }

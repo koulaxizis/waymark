@@ -10,6 +10,8 @@ package proto
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/koulaxizis/waymark/app/internal/relay"
 )
 
 // Version is the protocol version. Both sides check it at pairing.
@@ -162,6 +164,9 @@ type Addr struct {
 type AddrsData struct {
 	Port  int    `json:"port"`
 	Addrs []Addr `json:"addrs"`
+	// Relay is the Controller's relay, when it has one set: the Agent tries
+	// it when no address answers.
+	Relay *relay.Config `json:"relay,omitempty"`
 }
 
 // State is what the Agent reports on every change and every 5 s.

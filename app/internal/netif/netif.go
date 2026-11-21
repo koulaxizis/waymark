@@ -15,6 +15,7 @@ const (
 	WiFi  = "wifi"
 	Cell  = "cell"  // mobile data: a USB or Bluetooth phone, a 4G/5G modem
 	Other = "other" // virtual adapters, VPNs, unknown
+	Relay = "relay" // not an interface: the relay over the internet, last resort
 )
 
 // Rank orders kinds: lower is better.
@@ -26,6 +27,8 @@ func Rank(kind string) int {
 		return 1
 	case Cell:
 		return 2
+	case Relay:
+		return 4
 	}
 	return 3
 }
