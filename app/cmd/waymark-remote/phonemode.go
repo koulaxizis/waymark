@@ -6,6 +6,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/koulaxizis/waymark/app/internal/agent"
 	"github.com/koulaxizis/waymark/app/internal/rtc"
 )
 
@@ -53,6 +54,10 @@ func (a *App) AgentAcceptPhone(code string) error {
 	if err != nil {
 		return err
 	}
+	// A code from a page that is coming back (Proposal 13) opens its way.
+	if ag.ResumeCode(code) {
+		return nil
+	}
 	a.mu.Lock()
 	inv := a.invite
 	a.mu.Unlock()
@@ -68,9 +73,22 @@ func (a *App) AgentAcceptPhone(code string) error {
 		a.invite = nil
 	}
 	a.mu.Unlock()
-	ag.Attach(acc.ID, acc.Name, acc.Role, acc.Link)
+	ag.Attach(acc.ID, acc.Name, acc.Role, acc.Link, resumer{acc.Resume})
 	return nil
 }
+
+// resumer adapts rtc.Resume to agent.Resumer.
+type resumer struct{ r *rtc.Resume }
+
+func (x resumer) Wait(stop <-chan struct{}) (agent.Link, error) {
+	l, err := x.r.Wait(stop)
+	if err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+func (x resumer) TryCode(c string) bool { return x.r.TryCode(c) }
+func (x resumer) Port() int             { return x.r.Port() }
 
 // AgentCloseInvite hides the QR and frees its port.
 func (a *App) AgentCloseInvite() {

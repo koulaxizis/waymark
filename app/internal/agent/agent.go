@@ -59,6 +59,16 @@ type Agent struct {
 	fileSHA string
 	closed  bool
 	wake    chan struct{}
+
+	lastAddrs string // this laptop's addresses at the last tick (ticker only)
+}
+
+func addrList() string {
+	var b []byte
+	for _, f := range netif.List() {
+		b = append(b, f.IP.String()+" "+f.Kind+";"...)
+	}
+	return string(b)
 }
 
 // Link is one message pipe to a Controller: the encrypted TCP link of flow A
@@ -70,8 +80,17 @@ type Link interface {
 	Close() error
 }
 
+// Resumer brings a browser Controller back after its link failed for good,
+// without a new QR (rtc.Resume).
+type Resumer interface {
+	Wait(stop <-chan struct{}) (Link, error)
+	TryCode(code string) bool
+	Port() int
+}
+
 type peer struct {
 	info    proto.Peer
+	resume  Resumer       // a browser that can come back, else nil
 	pairing *pair.Pairing // nil for a browser: it cannot resume, it pairs again
 	conn    Link          // nil while reconnecting
 	path    pair.Path     // the network conn runs over (flow A)
@@ -119,10 +138,10 @@ func (a *Agent) Connect(code string) error {
 }
 
 // Attach adds a Controller that paired some other way, such as a browser
-// over flow B. It has no resume key: when its link is lost it is dropped and
-// the browser pairs again with a new QR.
-func (a *Agent) Attach(id, name string, role proto.Role, l Link) {
-	p := &peer{info: proto.Peer{ID: id, Name: name, Role: role}, conn: l, stop: make(chan struct{})}
+// over flow B. With a Resumer the browser can come back after its link
+// fails; without one it is dropped and pairs again with a new QR.
+func (a *Agent) Attach(id, name string, role proto.Role, l Link, res Resumer) {
+	p := &peer{info: proto.Peer{ID: id, Name: name, Role: role}, conn: l, resume: res, stop: make(chan struct{})}
 	a.mu.Lock()
 	if old := a.peers[id]; old != nil {
 		close(old.stop)
@@ -133,8 +152,53 @@ func (a *Agent) Attach(id, name string, role proto.Role, l Link) {
 	a.peers[id] = p
 	a.mu.Unlock()
 	a.ui.Log("connected: %s (%s, browser)", name, role)
+	a.sendAddrs(p, l)
 	go a.keep(p)
 	a.changed()
+}
+
+// ResumeCode passes a return code typed on the Agent to the browser it
+// belongs to, when that browser is trying to come back through a firewall.
+func (a *Agent) ResumeCode(code string) bool {
+	a.mu.Lock()
+	var rs []Resumer
+	for _, p := range a.peers {
+		if p.resume != nil {
+			rs = append(rs, p.resume)
+		}
+	}
+	a.mu.Unlock()
+	for _, r := range rs {
+		if r.TryCode(code) {
+			return true
+		}
+	}
+	return false
+}
+
+// sendAddrs tells a browser where this Agent is now, for its next resume.
+func (a *Agent) sendAddrs(p *peer, c Link) {
+	if p.resume == nil || c == nil {
+		return
+	}
+	d := proto.AddrsData{Port: p.resume.Port()}
+	for _, f := range netif.List() {
+		d.Addrs = append(d.Addrs, proto.Addr{IP: f.IP.String(), Kind: f.Kind})
+	}
+	c.Send(proto.Msg{V: proto.Version, T: proto.TAddrs, Data: mustJSON(d)})
+}
+
+func linkDone(c Link) bool {
+	d, ok := c.(interface{ Done() <-chan struct{} })
+	if !ok {
+		return true
+	}
+	select {
+	case <-d.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 // keep serves the link and, after a loss, reconnects every RetryEvery over
@@ -158,11 +222,16 @@ func (a *Agent) keep(p *peer) {
 			continue
 		}
 		a.mu.Unlock()
-		a.ui.Log("link to %s ended: %v", p.info.Name, err)
 		if p.pairing == nil {
-			a.drop(p.info.ID)
-			return
+			if c, err = a.keepBrowser(p, c, err); err != nil {
+				a.ui.Log("link to %s ended: %v", p.info.Name, err)
+				a.drop(p.info.ID)
+				return
+			}
+			continue
 		}
+		a.ui.Log("link to %s ended: %v", p.info.Name, err)
+		c.Close()
 		a.mu.Lock()
 		p.conn = nil
 		a.lostAt[p.info.ID] = time.Now()
@@ -202,6 +271,55 @@ func (a *Agent) keep(p *peer) {
 			a.changed()
 		}
 	}
+}
+
+// keepBrowser handles a browser link that went quiet or failed: a quiet one
+// may come back by itself (a short Wi-Fi drop), a failed one comes back
+// through its Resumer. It returns the link to serve next, or an error when
+// the browser is gone for good.
+func (a *Agent) keepBrowser(p *peer, c Link, err error) (Link, error) {
+	if errors.Is(err, io.EOF) { // the page said bye
+		c.Close()
+		return nil, err
+	}
+	a.mu.Lock()
+	wasOn := p.conn != nil
+	p.conn = nil
+	if _, lost := a.lostAt[p.info.ID]; !lost {
+		a.lostAt[p.info.ID] = time.Now()
+	}
+	a.mu.Unlock()
+	if wasOn {
+		a.ui.Log("%s went quiet, waiting for it", p.info.Name)
+		a.changed()
+	}
+	if !linkDone(c) {
+		return c, nil // the same connection may still come back
+	}
+	c.Close()
+	if p.resume == nil {
+		return nil, err
+	}
+	nc, err := p.resume.Wait(p.stop)
+	if err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	select {
+	case <-p.stop:
+		a.mu.Unlock()
+		nc.Close()
+		return nil, errors.New("stopped")
+	default:
+	}
+	p.conn = nc
+	p.lastSeq = 0 // a reloaded page counts from 1 again; the old link is gone
+	delete(a.lostAt, p.info.ID)
+	a.mu.Unlock()
+	a.ui.Log("%s is back", p.info.Name)
+	a.sendAddrs(p, nc)
+	a.changed()
+	return nc, nil
 }
 
 // upgrade moves a working link to a better path when one answers, for
@@ -264,13 +382,23 @@ func (a *Agent) serve(p *peer, c Link) error {
 	if c == nil {
 		return errors.New("no connection")
 	}
-	defer c.Close()
 	a.sendState(c)
 	for {
 		c.SetReadDeadline(time.Now().Add(LostAfter))
 		raw, err := c.Recv()
 		if err != nil {
 			return err
+		}
+		a.mu.Lock()
+		back := p.conn == nil && p.pairing == nil // a quiet browser speaks again
+		if back {
+			p.conn = c
+			delete(a.lostAt, p.info.ID)
+		}
+		a.mu.Unlock()
+		if back {
+			a.ui.Log("%s is back", p.info.Name)
+			a.changed()
 		}
 		var m proto.Msg
 		if err := json.Unmarshal(raw, &m); err != nil {
@@ -596,13 +724,17 @@ func (a *Agent) State() proto.State {
 		s.Status = proto.StatusIdle
 	}
 	for _, p := range a.peers {
+		pi := p.info
+		pi.Browser = p.pairing == nil
 		if p.conn != nil {
-			pi := p.info
 			pi.Path = p.path.Kind
 			s.Peers = append(s.Peers, pi)
+		} else {
+			s.Waiting = append(s.Waiting, pi)
 		}
 	}
 	sort.Slice(s.Peers, func(i, j int) bool { return s.Peers[i].Name < s.Peers[j].Name })
+	sort.Slice(s.Waiting, func(i, j int) bool { return s.Waiting[i].Name < s.Waiting[j].Name })
 	if h := a.peers[a.holder]; h != nil {
 		hi := h.info
 		s.Holder = &hi
@@ -647,17 +779,28 @@ func (a *Agent) ticker() {
 		case <-t.C:
 		case <-a.wake:
 		}
+		// The holder keeps the key through a lost link; another Controller
+		// can take it once the holder has been gone HolderGrace (take).
 		a.mu.Lock()
 		closed := a.closed
-		// Free the key if its holder has been gone too long.
-		if a.holder != "" {
-			if at, lost := a.lostAt[a.holder]; lost && time.Since(at) > HolderGrace {
-				a.holder = ""
-			}
-		}
 		a.mu.Unlock()
 		if closed {
 			return
+		}
+		if l := addrList(); l != a.lastAddrs {
+			a.lastAddrs = l
+			a.mu.Lock()
+			var ps []*peer
+			for _, p := range a.peers {
+				ps = append(ps, p)
+			}
+			a.mu.Unlock()
+			for _, p := range ps {
+				a.mu.Lock()
+				c := p.conn
+				a.mu.Unlock()
+				a.sendAddrs(p, c)
+			}
 		}
 		st := a.State()
 		a.ui.State(st)

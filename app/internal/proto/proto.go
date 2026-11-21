@@ -146,6 +146,8 @@ type Peer struct {
 	Name string `json:"name"`
 	Role Role   `json:"role"`
 	Path string `json:"path,omitempty"` // network of the link now: wired, wifi, cell, other
+	// Browser is a phone or browser Controller (flow B).
+	Browser bool `json:"browser,omitempty"`
 }
 
 // Addr is one address of the Controller, with the kind of network it is on
@@ -175,6 +177,9 @@ type State struct {
 	Status  string `json:"status"`
 	Holder  *Peer  `json:"holder,omitempty"`
 	Peers   []Peer `json:"peers"`
+	// Waiting are Controllers whose link is lost and that are coming back.
+	// A browser among them may show a code to type on the Agent.
+	Waiting []Peer `json:"waiting,omitempty"`
 	Folder  string `json:"folder"` // display name of the Agent folder
 }
 

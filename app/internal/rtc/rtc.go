@@ -12,6 +12,9 @@
 package rtc
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -28,6 +31,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/koulaxizis/waymark/app/internal/code"
+	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/proto"
 	"github.com/koulaxizis/waymark/app/internal/secure"
 )
@@ -46,8 +50,9 @@ func baseSettings() webrtc.SettingEngine {
 	se.LoggerFactory = lf
 	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	se.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
-	// Survive a short Wi-Fi drop (N5) but notice a real loss.
-	se.SetICETimeouts(5*time.Second, 15*time.Second, time.Second)
+	// Ride out a Wi-Fi drop of up to 30 s on the same connection (the
+	// browser gives up about then too); after that the page resumes.
+	se.SetICETimeouts(3*time.Second, 30*time.Second, time.Second)
 	return se
 }
 
@@ -85,6 +90,8 @@ type Invite struct {
 	Expires time.Time
 
 	token, fp []byte
+	cert      webrtc.Certificate
+	port      int
 	udp       *net.UDPConn
 	sniff     *sniffConn
 	mux       *ice.UDPMuxDefault
@@ -97,54 +104,30 @@ type Invite struct {
 // NewInvite opens a UDP socket and builds the QR link.
 func NewInvite(agentName string) (*Invite, error) {
 	token := secure.RandBytes(16)
-	ufrag := secure.B64(secure.MAC(token, []byte("ice-ufrag")))[:8]
-	pwd := secure.B64(secure.MAC(token, []byte("ice-pwd")))[:24]
-	udp, port, err := listenUDP()
+	udp, port, err := listenUDP(0)
 	if err != nil {
 		return nil, err
 	}
-	inv := &Invite{token: token, udp: udp, Expires: time.Now().Add(InviteLife)}
-	inv.sniff = &sniffConn{PacketConn: udp, localUfrag: ufrag, found: make(chan sniffResult, 1)}
-	inv.mux = ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: inv.sniff})
-	se := baseSettings()
-	se.SetLite(true)
-	se.SetICECredentials(ufrag, pwd)
-	se.SetICEUDPMux(inv.mux)
-	// The page's certificate is checked in-channel against the token.
-	se.DisableCertificateFingerprintVerification(true)
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
-	pc, err := api.NewPeerConnection(webrtc.Configuration{})
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		inv.Close()
+		udp.Close()
 		return nil, err
 	}
-	inv.pc = pc
-	neg, id := true, uint16(0)
-	if inv.dc, err = pc.CreateDataChannel("waymark", &webrtc.DataChannelInit{Negotiated: &neg, ID: &id}); err != nil {
-		inv.Close()
-		return nil, err
-	}
-	offer, err := pc.CreateOffer(nil)
+	cert, err := webrtc.GenerateCertificate(key)
 	if err != nil {
-		inv.Close()
+		udp.Close()
 		return nil, err
 	}
-	gathered := webrtc.GatheringCompletePromise(pc)
-	if err := pc.SetLocalDescription(offer); err != nil {
-		inv.Close()
+	inv := &Invite{token: token, udp: udp, port: port, cert: *cert, Expires: time.Now().Add(InviteLife)}
+	ap, err := newAgentPC(udp, token, inv.cert)
+	if err != nil {
+		udp.Close()
 		return nil, err
 	}
-	select {
-	case <-gathered:
-	case <-time.After(3 * time.Second):
-	}
-	if inv.fp, err = sdpFingerprint(pc.LocalDescription().SDP); err != nil {
-		inv.Close()
-		return nil, err
-	}
+	inv.sniff, inv.mux, inv.pc, inv.dc, inv.fp = ap.sniff, ap.mux, ap.pc, ap.dc, ap.fp
 	var ips []string
-	for _, ip := range code.LocalIPv4s() {
-		ips = append(ips, ip.String())
+	for _, f := range netif.List() {
+		ips = append(ips, f.IP.String())
 	}
 	if len(ips) == 0 {
 		inv.Close()
@@ -155,7 +138,105 @@ func NewInvite(agentName string) (*Invite, error) {
 	return inv, nil
 }
 
-func listenUDP() (*net.UDPConn, int, error) {
+// agentPC is the Agent end of one browser connection: an ICE-lite offerer on
+// a UDP socket, with ICE credentials derived from secret and a fixed DTLS
+// certificate, so the page can rebuild the offer from what it holds.
+type agentPC struct {
+	sniff *sniffConn
+	mux   *ice.UDPMuxDefault
+	pc    *webrtc.PeerConnection
+	dc    *webrtc.DataChannel
+	fp    []byte
+}
+
+func newAgentPC(udp *net.UDPConn, secret []byte, cert webrtc.Certificate) (*agentPC, error) {
+	ufrag := secure.B64(secure.MAC(secret, []byte("ice-ufrag")))[:8]
+	pwd := secure.B64(secure.MAC(secret, []byte("ice-pwd")))[:24]
+	ap := &agentPC{}
+	ap.sniff = &sniffConn{PacketConn: udp, localUfrag: ufrag, found: make(chan sniffResult, 1)}
+	ap.mux = ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: ap.sniff})
+	se := baseSettings()
+	se.SetLite(true)
+	se.SetICECredentials(ufrag, pwd)
+	se.SetICEUDPMux(ap.mux)
+	// The page's certificate is checked in-channel against the secret.
+	se.DisableCertificateFingerprintVerification(true)
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{Certificates: []webrtc.Certificate{cert}})
+	if err != nil {
+		ap.mux.Close()
+		return nil, err
+	}
+	ap.pc = pc
+	fail := func(err error) (*agentPC, error) { pc.Close(); ap.mux.Close(); return nil, err }
+	neg, id := true, uint16(0)
+	if ap.dc, err = pc.CreateDataChannel("waymark", &webrtc.DataChannelInit{Negotiated: &neg, ID: &id}); err != nil {
+		return fail(err)
+	}
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		return fail(err)
+	}
+	gathered := webrtc.GatheringCompletePromise(pc)
+	if err := pc.SetLocalDescription(offer); err != nil {
+		return fail(err)
+	}
+	select {
+	case <-gathered:
+	case <-time.After(3 * time.Second):
+	}
+	if ap.fp, err = sdpFingerprint(pc.LocalDescription().SDP); err != nil {
+		return fail(err)
+	}
+	return ap, nil
+}
+
+// answer sets the page's side from what the sniffer saw: its ICE username
+// fragment and address. A lite agent never sends checks, and the page's
+// certificate is checked in-channel, so the rest can be placeholders.
+func (ap *agentPC) answer(sr sniffResult) error {
+	ua, ok := sr.from.(*net.UDPAddr)
+	if !ok {
+		return errors.New("odd peer address")
+	}
+	sdp := strings.Join([]string{
+		"v=0", "o=- 2 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0",
+		"m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
+		"a=ice-ufrag:" + sr.ufrag,
+		"a=ice-pwd:" + strings.Repeat("x", 24),
+		"a=fingerprint:sha-256 " + fingerprintHex(make([]byte, 32)),
+		"a=setup:active", "a=mid:0", "a=sctp-port:5000", "a=max-message-size:262144",
+		fmt.Sprintf("a=candidate:1 1 udp 2130706431 %s %d typ host", ua.IP, ua.Port), "",
+	}, "\r\n")
+	return ap.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: sdp})
+}
+
+func (ap *agentPC) close() {
+	ap.pc.Close()
+	ap.mux.Close()
+}
+
+// remoteFP is the SHA-256 of the page's DTLS certificate.
+func (ap *agentPC) remoteFP() []byte {
+	der := ap.pc.SCTP().Transport().GetRemoteCertificate()
+	sum := sha256.Sum256(der)
+	return sum[:]
+}
+
+// listenUDP binds port, or a random high port when port is 0.
+func listenUDP(port int) (*net.UDPConn, int, error) {
+	if port != 0 {
+		var err error
+		for i := 0; i < 20; i++ { // the old socket may take a moment to go
+			c, e := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+			if e == nil {
+				return c, port, nil
+			}
+			err = e
+			time.Sleep(250 * time.Millisecond)
+		}
+		return nil, 0, err
+	}
 	for i := 0; i < 50; i++ {
 		b := secure.RandBytes(2)
 		p := 49152 + int(binary.BigEndian.Uint16(b)%16384)
@@ -191,10 +272,11 @@ type Prompt func(sas, peerName string, role proto.Role) (proto.Role, bool)
 
 // Accepted is a browser Controller that the presenter accepted.
 type Accepted struct {
-	Link *Link
-	ID   string
-	Name string
-	Role proto.Role
+	Link   *Link
+	ID     string
+	Name   string
+	Role   proto.Role
+	Resume *Resume // brings this page back after a lost link
 }
 
 // Accept takes the return code typed on the Agent and runs the connection.
@@ -236,20 +318,9 @@ func (inv *Invite) Accept(returnCode string, prompt Prompt) (*Accepted, error) {
 	case <-time.After(90 * time.Second):
 		return nil, errors.New("nothing arrived from the browser in 90 s: same network? press Connect on the page")
 	}
-	if ua, ok := sr.from.(*net.UDPAddr); ok {
-		peer = ua
-	}
-	answer := strings.Join([]string{
-		"v=0", "o=- 2 2 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0",
-		"m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
-		"a=ice-ufrag:" + sr.ufrag,
-		"a=ice-pwd:" + strings.Repeat("x", 24), // a lite agent never sends checks
-		"a=fingerprint:sha-256 " + fingerprintHex(make([]byte, 32)),
-		"a=setup:active", "a=mid:0", "a=sctp-port:5000", "a=max-message-size:262144",
-		fmt.Sprintf("a=candidate:1 1 udp 2130706431 %s %d typ host", peer.IP, peer.Port), "",
-	}, "\r\n")
-	link := newLink(inv)
-	if err := inv.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+	ap := &agentPC{sniff: inv.sniff, mux: inv.mux, pc: inv.pc, dc: inv.dc, fp: inv.fp}
+	link := newLink(ap, inv.udp, sr.from)
+	if err := ap.answer(sr); err != nil {
 		return nil, fmt.Errorf("remote description: %w", err)
 	}
 	select {
@@ -273,9 +344,7 @@ func (inv *Invite) Accept(returnCode string, prompt Prompt) (*Accepted, error) {
 		link.Send(map[string]any{"t": "err", "code": proto.ErrVersion, "err": "update the page"})
 		return nil, fmt.Errorf("page protocol %d", h.V)
 	}
-	der := inv.pc.SCTP().Transport().GetRemoteCertificate()
-	sum := sha256.Sum256(der)
-	if !secure.Equal(sum[:], pageFP) {
+	if !secure.Equal(ap.remoteFP(), pageFP) {
 		return nil, errors.New("the browser's certificate does not match its hello")
 	}
 	if !h.Role.Valid() {
@@ -302,19 +371,24 @@ func (inv *Invite) Accept(returnCode string, prompt Prompt) (*Accepted, error) {
 		granted = h.Role
 	}
 	id := "b-" + secure.B64(secure.MAC(inv.token, []byte("pair-id"), pageFP)[:9])
-	if err := link.Send(map[string]any{"t": "confirm", "id": id, "role": granted}); err != nil {
+	// The resume key lets this page come back without a new QR for 24 h.
+	rk := secure.RandBytes(16)
+	if err := link.Send(map[string]any{"t": "confirm", "id": id, "role": granted, "rk": secure.B64(rk)}); err != nil {
 		link.Close()
 		return nil, err
 	}
 	inv.mu.Lock()
 	inv.used = true
 	inv.mu.Unlock()
-	return &Accepted{Link: link, ID: id, Name: name, Role: granted}, nil
+	res := &Resume{ID: id, key: rk, cert: inv.cert, fp: inv.fp, port: inv.port, Until: time.Now().Add(ResumeLife), codes: make(chan *net.UDPAddr, 1)}
+	return &Accepted{Link: link, ID: id, Name: name, Role: granted, Resume: res}, nil
 }
 
 // Link is the data channel as a message pipe, shaped like secure.Conn.
 type Link struct {
-	inv      *Invite
+	ap       *agentPC
+	udp      *net.UDPConn
+	peer     net.Addr
 	in       chan []byte
 	opened   chan struct{}
 	closed   chan struct{}
@@ -323,26 +397,52 @@ type Link struct {
 	deadline time.Time
 }
 
-func newLink(inv *Invite) *Link {
-	l := &Link{inv: inv, in: make(chan []byte, 256), opened: make(chan struct{}), closed: make(chan struct{})}
+func newLink(ap *agentPC, udp *net.UDPConn, peer net.Addr) *Link {
+	l := &Link{ap: ap, udp: udp, peer: peer, in: make(chan []byte, 256), opened: make(chan struct{}), closed: make(chan struct{})}
 	var openOnce sync.Once
-	inv.dc.OnOpen(func() { openOnce.Do(func() { close(l.opened) }) })
-	inv.dc.OnMessage(func(m webrtc.DataChannelMessage) {
+	ap.dc.OnOpen(func() { openOnce.Do(func() { close(l.opened) }) })
+	ap.dc.OnMessage(func(m webrtc.DataChannelMessage) {
 		select {
 		case l.in <- m.Data:
 		case <-l.closed:
 		}
 	})
-	inv.dc.OnClose(func() { l.shut() })
-	inv.pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+	ap.dc.OnClose(func() { l.shut() })
+	var punching sync.Once
+	ap.pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		switch s {
+		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
 			l.shut()
+		case webrtc.PeerConnectionStateDisconnected:
+			// Keep the way through this laptop's firewall open while the
+			// phone is away (a Wi-Fi drop), so its checks get in again.
+			punching.Do(func() { go l.punch() })
 		}
 	})
 	return l
 }
 
+func (l *Link) punch() {
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-l.closed:
+			return
+		case <-t.C:
+			if l.ap.pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
+				continue
+			}
+			l.udp.WriteTo(stunIndication(), l.peer)
+		}
+	}
+}
+
 func (l *Link) shut() { l.once.Do(func() { close(l.closed) }) }
+
+// Done is closed when the browser connection has failed for good: the
+// browser must then come back through Resume.
+func (l *Link) Done() <-chan struct{} { return l.closed }
 
 // Send writes one JSON message.
 func (l *Link) Send(v any) error {
@@ -356,14 +456,14 @@ func (l *Link) Send(v any) error {
 	default:
 	}
 	// Back-pressure: wait while the SCTP buffer is full (large downloads).
-	for i := 0; l.inv.dc.BufferedAmount() > 4<<20 && i < 1500; i++ {
+	for i := 0; l.ap.dc.BufferedAmount() > 4<<20 && i < 1500; i++ {
 		select {
 		case <-l.closed:
 			return errors.New("link closed")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	return l.inv.dc.SendText(string(b))
+	return l.ap.dc.SendText(string(b))
 }
 
 // Recv returns the next message, or an error after the read deadline.
@@ -383,9 +483,12 @@ func (l *Link) Recv() ([]byte, error) {
 	case <-l.closed:
 		return nil, errors.New("link closed")
 	case <-timer:
-		return nil, errors.New("read timeout")
+		return nil, ErrTimeout
 	}
 }
+
+// ErrTimeout is a quiet link that may still come back.
+var ErrTimeout = errors.New("read timeout")
 
 func (l *Link) SetReadDeadline(t time.Time) error {
 	l.mu.Lock()
@@ -397,9 +500,8 @@ func (l *Link) SetReadDeadline(t time.Time) error {
 // Close ends the connection and frees the socket.
 func (l *Link) Close() error {
 	l.shut()
-	l.inv.pc.Close()
-	l.inv.mux.Close()
-	l.inv.udp.Close()
+	l.ap.close()
+	l.udp.Close()
 	return nil
 }
 

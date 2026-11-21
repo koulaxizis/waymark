@@ -89,12 +89,12 @@ type Listener struct {
 	// Controller then waits for the presenter to accept on the Agent.
 	OnSAS func(sas, agentName string)
 
-	ln     net.Listener
-	port   int
-	mu     sync.Mutex
-	secret uint32
-	fails  int
-	pairs  map[string]*known
+	ln         net.Listener
+	port       int
+	mu         sync.Mutex
+	secret     uint32
+	fails      int
+	pairs      map[string]*known
 	acceptOnce sync.Once
 	results    chan accepted
 	// listAddrs is ListAddrs as it was at Listen.

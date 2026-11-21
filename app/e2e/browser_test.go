@@ -84,6 +84,19 @@ func (u *ui) State(proto.State)              {}
 func (u *ui) Event(proto.Event)              {}
 func (u *ui) Log(format string, args ...any) { u.t.Logf("agent: "+format, args...) }
 
+// resumer adapts rtc.Resume to agent.Resumer, as the app does.
+type resumer struct{ r *rtc.Resume }
+
+func (x resumer) Wait(stop <-chan struct{}) (agent.Link, error) {
+	l, err := x.r.Wait(stop)
+	if err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+func (x resumer) TryCode(c string) bool { return x.r.TryCode(c) }
+func (x resumer) Port() int             { return x.r.Port() }
+
 func TestBrowserController(t *testing.T) {
 	root, _ := filepath.Abs("../../remote")
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -144,13 +157,13 @@ func TestBrowserController(t *testing.T) {
 		cmd.Wait()
 		t.Fatalf("accept: %v\n%s\n%s", err, stdout.String(), stderr.String())
 	}
-	ag.Attach(acc.ID, acc.Name, acc.Role, acc.Link)
+	ag.Attach(acc.ID, acc.Name, acc.Role, acc.Link, resumer{acc.Resume})
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err = <-done:
-	case <-time.After(90 * time.Second):
+	case <-time.After(150 * time.Second):
 		cmd.Process.Kill()
 		err = <-done
 	}
@@ -159,7 +172,7 @@ func TestBrowserController(t *testing.T) {
 		t.Fatalf("page script: %v\n%s", err, stderr.String())
 	}
 	var res struct {
-		SAS, Slide, DownloadSHA string
+		SAS, Slide, Resumed, DownloadSHA string
 	}
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &res); err != nil {
@@ -170,6 +183,9 @@ func TestBrowserController(t *testing.T) {
 	}
 	if res.Slide != "2 / 5" {
 		t.Errorf("slide after Next: %q", res.Slide)
+	}
+	if res.Resumed != "3 / 5" {
+		t.Errorf("slide after a reload and Next: %q (the page did not come back)", res.Resumed)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "notes.txt"))
 	if err != nil || !bytes.Equal(got, upData) {

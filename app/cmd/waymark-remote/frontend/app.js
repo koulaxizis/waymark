@@ -148,6 +148,8 @@ function initAgent() {
     if (await window.runtime.ClipboardSetText($("phoneQR").alt)) phoneMsg(T("phoneCopied"), "ok");
   };
   $("btnAcceptPhone").onclick = acceptPhone;
+  $("btnResume").onclick = resumePhone;
+  $("resumeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") resumePhone(); });
   $("returnInput").addEventListener("keydown", (e) => { if (e.key === "Enter") acceptPhone(); });
   on("agent:prompt", showPrompt);
   on("agent:prompt-done", () => $("promptDlg").open && $("promptDlg").close());
@@ -226,6 +228,22 @@ function closeInvite() {
   $("phoneStart").hidden = false;
 }
 
+function pathLabel(k) {
+  return T("pathNote", T("path_" + (["wired", "wifi", "cell"].includes(k) ? k : "other")));
+}
+
+async function resumePhone() {
+  const code = $("resumeInput").value.trim();
+  if (!code) return;
+  try {
+    await go().AgentAcceptPhone(code);
+    $("resumeInput").value = "";
+    phoneMsg(T("w_back"), "info");
+  } catch (e) {
+    phoneMsg(friendlyPhoneError(String(e)));
+  }
+}
+
 async function acceptPhone() {
   const code = $("returnInput").value.trim();
   if (!code) return;
@@ -280,12 +298,20 @@ function renderAgentState() {
   $("topStatus").innerHTML = peers.length
     ? `<span class="status ok">${esc(T("statusConnected", peers.length))}</span>`
     : `<span class="status off">${esc(T("statusWaiting"))}</span>`;
-  $("peerList").innerHTML = peers.length
+  const waiting = s.waiting || [];
+  const hasKey = (p) => s.holder && s.holder.id === p.id ? ` · <span class="status ok">${esc(T("hasControl"))}</span>` : "";
+  $("peerList").innerHTML = peers.length || waiting.length
     ? peers.map((p) => `<div class="row" style="justify-content:space-between">
-        <span><b>${esc(p.name)}</b> · ${esc(T("role_" + p.role))}${s.holder && s.holder.id === p.id ? ` · <span class="status ok">${esc(T("hasControl"))}</span>` : ""}</span>
+        <span><b>${esc(p.name)}</b> · ${esc(T("role_" + p.role))}${p.path ? ` · ${esc(pathLabel(p.path))}` : ""}${hasKey(p)}</span>
+        <button class="btn ghost small" data-drop="${esc(p.id)}">${esc(T("disconnect"))}</button></div>`).join("") +
+      waiting.map((p) => `<div class="row" style="justify-content:space-between">
+        <span><b>${esc(p.name)}</b> · <span class="status wait">${esc(T("w_back"))}</span>${hasKey(p)}</span>
         <button class="btn ghost small" data-drop="${esc(p.id)}">${esc(T("disconnect"))}</button></div>`).join("")
     : `<span class="muted">${esc(T("nobody"))}</span>`;
   $("peerList").querySelectorAll("[data-drop]").forEach((b) => (b.onclick = () => go().AgentDisconnect(b.dataset.drop)));
+  // A phone that cannot get back through this laptop's firewall shows a
+  // code: it goes in this box.
+  $("resumeBox").hidden = !waiting.some((p) => p.browser);
   $("folderPath").textContent = s.folder;
   $("aFile").textContent = s.file || T("noFile");
   $("aApp").textContent = s.app ? T("app_" + s.app) : "";
@@ -450,10 +476,10 @@ function renderAgents() {
   $("noAgents").hidden = agents.length > 0;
   $("agentList").innerHTML = agents.map((a) => {
     const s = a.state;
-    const st = !a.online ? `<span class="status err">${esc(T("offline"))}</span>` : statusBadge(s?.status);
+    const st = !a.online ? `<span class="status wait">${esc(T("w_back"))}</span>` : statusBadge(s?.status);
     return `<button class="agent ${a.id === selected ? "sel" : ""}" data-id="${esc(a.id)}">
       <span class="name">${esc(a.name)}</span>
-      <span class="small muted">${esc(T("role_" + a.role))}${a.online ? ` · ${a.latencyMs} ms` : ""}</span>
+      <span class="small muted">${esc(T("role_" + a.role))}${a.online ? ` · ${a.latencyMs} ms${a.path ? ` · ${esc(pathLabel(a.path))}` : ""}` : ""}</span>
       <span class="small">${st} ${s && s.file ? `· ${esc(s.file.split("/").pop())} · <span class="num">${slideText(s)}</span>` : ""}</span>
     </button>`;
   }).join("");

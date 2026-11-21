@@ -5,6 +5,9 @@
 // Agent's addresses, its DTLS fingerprint and a one-time token. The page
 // shows a return code with its own address; the presenter types it on the
 // Agent, the Agent opens its firewall path and the page connects.
+//
+// After pairing the page keeps a resume key, so a lost link (Wi-Fi gone, a
+// reload, a new address) comes back without a new QR (Proposal 13).
 import { T, setLang, lang, applyI18n, errText } from "./i18n.js";
 import { Sha256 } from "./sha256.js";
 
@@ -186,61 +189,104 @@ async function prepare() {
   try { await makeOffer(); } finally { if (st) st.getTracks().forEach((t) => t.stop()); $("btnSetup").disabled = false; }
 }
 
-async function makeOffer() {
-  const ufrag = b64u(await hmac(A.token, enc.encode("ice-ufrag"))).slice(0, 8);
-  const pwd = b64u(await hmac(A.token, enc.encode("ice-pwd"))).slice(0, 24);
-  pc = new RTCPeerConnection({ iceServers: [] });
-  dc = pc.createDataChannel("waymark", { negotiated: true, id: 0 });
-  dc.onopen = onOpen;
-  // Messages are handled in order: the hello-ack check is async and the
-  // confirm may already be behind it.
-  let q = Promise.resolve();
-  dc.onmessage = (ev) => { q = q.then(() => onMsg(JSON.parse(ev.data))).catch((e) => console.error(e)); };
-  dc.onclose = () => ended("w_ended");
-  pc.onconnectionstatechange = () => { if (pc && pc.connectionState === "failed") ended("w_ended"); };
-  // The Agent is an ICE-lite offerer; this SDP is rebuilt from the QR.
+// newPC builds the page's side of the Agent's offer, rebuilt from what the
+// page knows: ICE credentials from secret and the Agent's DTLS fingerprint.
+// It returns the page's fingerprint and host candidates.
+async function newPC(secret, agentFp) {
+  const ufrag = b64u(await hmac(secret, enc.encode("ice-ufrag"))).slice(0, 8);
+  const pwd = b64u(await hmac(secret, enc.encode("ice-pwd"))).slice(0, 24);
+  const p = new RTCPeerConnection({ iceServers: [] });
+  const d = p.createDataChannel("waymark", { negotiated: true, id: 0 });
+  // The Agent is an ICE-lite offerer.
   const offer = [
     "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=-", "t=0 0", "a=group:BUNDLE 0", "a=ice-lite",
     "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0",
-    "a=ice-ufrag:" + ufrag, "a=ice-pwd:" + pwd, "a=fingerprint:sha-256 " + hexFp(A.fp),
+    "a=ice-ufrag:" + ufrag, "a=ice-pwd:" + pwd, "a=fingerprint:sha-256 " + hexFp(agentFp),
     "a=setup:actpass", "a=mid:0", "a=sctp-port:5000", "a=max-message-size:262144", "",
   ].join("\r\n");
-  await pc.setRemoteDescription({ type: "offer", sdp: offer });
-  const answer = await pc.createAnswer();
+  await p.setRemoteDescription({ type: "offer", sdp: offer });
+  const answer = await p.createAnswer();
   const gathered = new Promise((res) => {
-    pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && res();
+    p.onicegatheringstatechange = () => p.iceGatheringState === "complete" && res();
     setTimeout(res, 3000);
   });
-  await pc.setLocalDescription(answer);
+  await p.setLocalDescription(answer);
   await gathered;
-  const sdp = pc.localDescription.sdp;
-  myFp = fpBytes(/a=fingerprint:sha-256 ([0-9A-F:]+)/i.exec(sdp)[1]);
+  const sdp = p.localDescription.sdp;
+  const fp = fpBytes(/a=fingerprint:sha-256 ([0-9A-F:]+)/i.exec(sdp)[1]);
   const cands = [...sdp.matchAll(/a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ host/gi)].map((m) => ({ ip: m[1], port: +m[2] }));
-  const v4 = cands.filter((c) => /^\d+\.\d+\.\d+\.\d+$/.test(c.ip));
-  // Prefer the address on the Agent's subnet.
-  const score = (ip) => Math.max(...A.ips.map((a) => { const x = a.split("."), y = ip.split("."); let n = 0; while (n < 4 && x[n] === y[n]) n++; return n; }));
-  v4.sort((a, b) => score(b.ip) - score(a.ip));
+  return { pc: p, dc: d, fp, cands };
+}
+
+const isV4 = (ip) => /^\d+\.\d+\.\d+\.\d+$/.test(ip);
+
+// pickV4 orders the page's IPv4 candidates, those on the Agent's subnet first.
+function pickV4(cands, agentIPs) {
+  const score = (ip) => Math.max(...agentIPs.map((a) => { const x = a.split("."), y = ip.split("."); let n = 0; while (n < 4 && x[n] === y[n]) n++; return n; }));
+  return cands.filter((c) => isV4(c.ip)).sort((a, b) => score(b.ip) - score(a.ip));
+}
+
+// wire hands a connected channel to onMsg, in order: the hello-ack check is
+// async and the confirm may already be behind it. backlog holds messages
+// that came before.
+function wire(p, d, backlog = []) {
+  let q = Promise.resolve();
+  const take = (raw) => { q = q.then(() => onMsg(JSON.parse(raw))).catch((e) => console.error(e)); };
+  backlog.forEach(take);
+  d.onmessage = (ev) => d === dc && take(ev.data);
+  d.onclose = () => d === dc && lost();
+  p.onconnectionstatechange = () => p === pc && p.connectionState === "failed" && lost();
+}
+
+// lost ends a pairing; a live link comes back through relink.
+function lost() {
+  if (phase === "pair") ended("w_ended");
+  else if (phase === "live") relink();
+}
+
+function closePC() {
+  const p = pc;
+  pc = dc = null;
+  try { p && p.close(); } catch {}
+}
+
+async function makeOffer() {
+  const n = await newPC(A.token, A.fp);
+  pc = n.pc;
+  dc = n.dc;
+  myFp = n.fp;
+  dc.onopen = onOpen;
+  wire(pc, dc);
+  const v4 = pickV4(n.cands, A.ips);
   if (v4.length) {
     myIP = v4[0].ip;
     myPort = v4[0].port;
     await showCode();
-  } else if (cands.length) {
-    myPort = cands[0].port;
+  } else if (n.cands.length) {
+    myPort = n.cands[0].port;
     $("manualIP").hidden = false;
   } else {
     msg("codeMsg", T("w_noWebRTC"));
   }
 }
 
-async function showCode() {
-  const ip = myIP.split(".").map(Number);
-  if (ip.length !== 4 || ip.some((x) => !(x >= 0 && x <= 255))) return;
-  const s = await hmac(A.token, enc.encode("wm-return"), Uint8Array.from(ip), Uint8Array.of(myPort >> 8, myPort & 255));
+// returnCode is the code the presenter types on the Agent: this page's
+// address and port with a check made with key.
+async function returnCode(key, ipStr, port) {
+  const ip = ipStr.split(".").map(Number);
+  if (ip.length !== 4 || ip.some((x) => !(x >= 0 && x <= 255))) return "";
+  const s = await hmac(key, enc.encode("wm-return"), Uint8Array.from(ip), Uint8Array.of(port >> 8, port & 255));
   const chk = ((s[0] << 8) | s[1]) >> 4;
-  let v = (BigInt(((ip[0] << 24) >>> 0) + (ip[1] << 16) + (ip[2] << 8) + ip[3]) << 16n) | BigInt(myPort);
+  let v = (BigInt(((ip[0] << 24) >>> 0) + (ip[1] << 16) + (ip[2] << 8) + ip[3]) << 16n) | BigInt(port);
   v = (v << 12n) | BigInt(chk);
   const c = crockford(v, 12);
-  $("retCode").textContent = c.slice(0, 4) + "-" + c.slice(4, 8) + "-" + c.slice(8);
+  return c.slice(0, 4) + "-" + c.slice(4, 8) + "-" + c.slice(8);
+}
+
+async function showCode() {
+  const c = await returnCode(A.token, myIP, myPort);
+  if (!c) return;
+  $("retCode").textContent = c;
   $("manualIP").hidden = true;
   $("btnConnect").disabled = false;
 }
@@ -308,11 +354,25 @@ async function onMsg(m) {
       agent.state = m.data;
       renderLive();
       return;
+    case "addrs": {
+      // Every address the Agent has, best first, and the port it comes back on.
+      const d = m.data || {};
+      const list = Array.isArray(d.addrs) ? d.addrs.filter((a) => a && isV4(a.ip)) : [];
+      if (R && d.port > 0 && list.length) {
+        R.ips = list.map((a) => a.ip);
+        R.kinds = Object.fromEntries(list.map((a) => [a.ip, a.kind]));
+        R.port = d.port;
+        saveR();
+        findPath();
+      }
+      return;
+    }
     case "event":
       if (m.data?.kind === "file.new") loadFiles();
       if (m.data?.kind === "control.taken") cmdMsg(T("takenBySupervisor", m.data.by?.name || ""));
       return;
     case "bye":
+      forgetR();
       ended("w_ended");
   }
 }
@@ -327,18 +387,157 @@ const pending = new Map();
 function goLive(m) {
   phase = "live";
   agent = { id: m.id, role: m.role, state: null };
+  forgetR();
+  if (m.rk) {
+    // The Agent keeps the key for 24 h; the page a little less.
+    R = { ips: A.ips, kinds: {}, port: A.port, fp: b64u(A.fp), rk: m.rk, id: m.id, role: m.role, name: myName, until: Date.now() + 23.5 * 3600e3 };
+    saveR();
+  }
+  enterLive();
+  linkUp();
+}
+
+function enterLive() {
   show("sLive");
   wireLive();
-  call("state.get").then((r) => { if (r.t === "ok") { agent.state = r.data; renderLive(); } });
+  clearInterval(pinger);
+  let n = 0;
+  // A heartbeat every second: the top bar turns to "lost" after 3 s of
+  // silence, and after 20 s the page stops waiting and reconnects.
   pinger = setInterval(async () => {
-    if (dc.readyState !== "open") return;
+    if (phase !== "live" || linking || !dc || dc.readyState !== "open") return;
+    if (Date.now() - lastSeen > 20000) { relink(); return; }
+    if (++n % 5 === 0) findPath();
     const t0 = performance.now();
-    const r = await call("ping", { t0: Date.now() }, 4000);
+    const r = await call("ping", { t0: Date.now() }, 3000);
     if (r.t === "ok") latency = Math.round(performance.now() - t0);
     renderTop();
-  }, 2000);
+  }, 1000);
   keepAwake();
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && keepAwake());
+}
+
+function linkUp() {
+  linking = false;
+  lastSeen = Date.now();
+  $("backBox").hidden = true;
+  call("state.get").then((r) => { if (r.t === "ok") { agent.state = r.data; renderLive(); } });
+  if (!$("paneFiles").hidden) loadFiles();
+  findPath();
+  renderTop();
+}
+
+// findPath reads which of the Agent's addresses the link runs over, for
+// the "over Wi-Fi" note at the top.
+async function findPath() {
+  const p = pc;
+  if (!p) return;
+  try {
+    const st = await p.getStats();
+    let pair = null;
+    st.forEach((x) => { if (x.type === "transport" && x.selectedCandidatePairId) pair = st.get(x.selectedCandidatePairId); });
+    if (!pair) st.forEach((x) => { if (x.type === "candidate-pair" && x.nominated && x.state === "succeeded") pair = x; });
+    const rc = pair && st.get(pair.remoteCandidateId);
+    const ip = rc && (rc.address || rc.ip);
+    if (ip && p === pc) path = R?.kinds?.[ip] || "";
+  } catch {}
+  renderTop();
+}
+
+// ---------- 5b. coming back ----------
+// R is what the page keeps to come back without a new QR: the Agent's
+// addresses and port, its fingerprint and the resume key from pairing.
+let R = null, linking = false, kick = null, path = "";
+const RKEY = "resume";
+function saveR() { if (R) store.set(RKEY, JSON.stringify(R)); }
+function forgetR() { R = null; try { localStorage.removeItem("wm." + RKEY); } catch {} }
+function loadR() {
+  try {
+    const r = JSON.parse(store.get(RKEY, "null"));
+    if (r && r.until > Date.now() && r.rk && r.fp && r.id && r.port && r.ips?.length) return r;
+  } catch {}
+  forgetR();
+  return null;
+}
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+function failPending() {
+  for (const [, p] of pending) {
+    clearTimeout(p.timer);
+    if (p.started && p.stream) p.stream({ error: { t: "error", code: "LINK" } });
+    else p.resolve({ t: "error", code: "LINK" });
+  }
+  pending.clear();
+}
+
+// relink brings a live link back: a try every second or so, on every
+// address the Agent gave, until the resume key runs out or the presenter
+// scans a new QR.
+async function relink() {
+  if (linking || phase !== "live") return;
+  if (!R) { ended("w_ended"); return; }
+  linking = true;
+  failPending();
+  $("backBox").hidden = false;
+  $("backCodeBox").hidden = true;
+  renderTop();
+  for (let tries = 1; phase === "live" && linking; tries++) {
+    if (!R || Date.now() > R.until) { forgetR(); ended("w_ended"); return; }
+    let ok = false;
+    try { ok = await attempt(tries); } catch (e) { console.error(e); }
+    if (ok) { linkUp(); return; }
+    if (phase !== "live") return;
+    await sleep(1000);
+  }
+}
+
+// attempt is one try on a fresh connection. From the third try on it is
+// probably this laptop's firewall (a Windows "Public" network), so the page
+// shows a return code first; typed on the Agent it opens the way, and the
+// checks start on Connect, as at pairing, or after a minute by themselves.
+async function attempt(tries) {
+  closePC();
+  const key = unb64u(R.rk), afp = unb64u(R.fp);
+  const n = await newPC(key, afp);
+  if (phase !== "live" || !linking) { n.pc.close(); return false; }
+  pc = n.pc;
+  dc = n.dc;
+  myFp = n.fp;
+  const p = pc, d = dc;
+  const opened = new Promise((res) => {
+    d.onopen = () => res(true);
+    d.onclose = () => res(false);
+    p.onconnectionstatechange = () => p.connectionState === "failed" && res(false);
+  });
+  if (tries >= 3) {
+    const v4 = pickV4(n.cands, R.ips);
+    $("backCode").textContent = (v4.length && (await returnCode(key, v4[0].ip, v4[0].port))) || "–";
+    $("backCodeBox").hidden = false;
+    await new Promise((res) => { kick = res; setTimeout(res, 60000); });
+    kick = null;
+    if (p !== pc || phase !== "live") return false;
+  }
+  for (const ip of R.ips) {
+    try {
+      await p.addIceCandidate({ candidate: `candidate:1 1 udp 2130706431 ${ip} ${R.port} typ host`, sdpMid: "0", sdpMLineIndex: 0 });
+    } catch {}
+  }
+  if (!(await Promise.race([opened, sleep(15000).then(() => false)])) || p !== pc) return false;
+  // The page proves it holds the key; the Agent proves it back.
+  const buf = [];
+  let wake = () => {};
+  d.onmessage = (ev) => { buf.push(ev.data); wake(); };
+  d.onclose = () => wake();
+  const mac = await hmac(key, enc.encode("wm-b-resume"), myFp, afp);
+  try { d.send(JSON.stringify({ t: "resume", v: VERSION, id: R.id, fp: b64u(myFp), mac: b64u(mac) })); } catch { return false; }
+  await Promise.race([new Promise((res) => { wake = res; if (buf.length) res(); }), sleep(10000)]);
+  if (!buf.length || p !== pc || d.readyState !== "open") return false;
+  let m = null;
+  try { m = JSON.parse(buf[0]); } catch {}
+  if (m?.t === "err") { forgetR(); ended(m.code === "VERSION" ? "errVersion" : null, m.err); return false; }
+  const want = await hmac(key, enc.encode("wm-b-resumed"), myFp, afp);
+  if (m?.t !== "resumed" || !m.mac || !eq(unb64u(m.mac), want)) return false;
+  wire(p, d, buf.slice(1));
+  return true;
 }
 
 async function keepAwake() {
@@ -351,6 +550,9 @@ async function keepAwake() {
 // drops an old one that arrives late.
 function call(cmd, args, timeout = 15000, stream) {
   return new Promise((resolve) => {
+    // While the link is coming back, a slide command is refused at once
+    // rather than sent late.
+    if (linking || (/^(pres|control)\./.test(cmd) && Date.now() - lastSeen > 3000)) { resolve({ t: "error", code: "WAIT" }); return; }
     if (!dc || dc.readyState !== "open") { resolve({ t: "error", code: "LINK" }); return; }
     const id = rid();
     const m = { v: VERSION, t: "cmd", id, cmd };
@@ -366,10 +568,12 @@ const isHolder = () => !!(agent?.state?.holder && agent.state.holder.id === agen
 
 function renderTop() {
   if (phase !== "live") { $("topStatus").innerHTML = ""; return; }
-  const stale = Date.now() - lastSeen > 6000;
-  $("topStatus").innerHTML = stale
-    ? `<span class="status wait">${esc(T("w_lost"))}</span>`
-    : `<span class="status ok">${esc(T("online"))} · <span class="num">${latency} ms</span></span>`;
+  const via = path ? ` · ${esc(T("pathNote", T("path_" + (["wired", "wifi", "cell"].includes(path) ? path : "other"))))}` : "";
+  $("topStatus").innerHTML = linking
+    ? `<span class="status wait">${esc(T("w_back"))}</span>`
+    : Date.now() - lastSeen > 3000
+      ? `<span class="status wait">${esc(T("w_lost"))}</span>`
+      : `<span class="status ok">${esc(T("online"))} · <span class="num">${latency} ms</span>${via}</span>`;
 }
 
 function slideText(s) {
@@ -416,15 +620,16 @@ function cmdMsg(text) {
   clearTimeout(cmdTimer);
   if (text) cmdTimer = setTimeout(() => ($("cmdMsg").hidden = true), 8000);
 }
+const errMsg = (r) => (r.code === "WAIT" ? T("w_waitLink") : errText(r.code, r.err));
 function handle(r) {
-  cmdMsg(r.t === "error" ? errText(r.code, r.err) : "");
+  cmdMsg(r.t === "error" ? errMsg(r) : "");
   return r;
 }
 let fileTimer = null;
 function fileResult(r) {
   const m = $("fileMsg");
   if (r.t === "error") {
-    m.textContent = errText(r.code, r.err);
+    m.textContent = errMsg(r);
     m.hidden = false;
     clearTimeout(fileTimer);
     fileTimer = setTimeout(() => (m.hidden = true), 8000);
@@ -476,7 +681,9 @@ function wireLive() {
   });
   if (/Android|iPhone|iPad/.test(navigator.userAgent)) dz.hidden = true;
   $("cFiles").addEventListener("click", onFileAction);
-  $("btnBye").onclick = () => { try { send({ v: VERSION, t: "bye" }); } catch {} setTimeout(() => ended("w_ended"), 150); };
+  $("btnBye").onclick = () => { forgetR(); try { send({ v: VERSION, t: "bye" }); } catch {} setTimeout(() => ended("w_ended"), 150); };
+  $("btnBack").onclick = () => kick && kick();
+  $("btnForget").onclick = () => { forgetR(); ended("w_ended"); restart(); };
 }
 
 function ask(text, value) {
@@ -583,7 +790,7 @@ async function upload(file, rel) {
   }
   const sum = h.hex();
   const r = await call("file.offer", { path: rel, size: file.size, sha256: sum });
-  if (r.t === "error") { pr.fail(errText(r.code, r.err)); return false; }
+  if (r.t === "error") { pr.fail(errMsg(r)); return false; }
   const { id, offset } = r.data;
   let off = offset || 0;
   const inflight = [];
@@ -599,9 +806,9 @@ async function upload(file, rel) {
     if (inflight.length >= 8) await inflight.shift();
   }
   await Promise.all(inflight);
-  if (failed) { pr.fail(errText(failed.code, failed.err)); return false; }
+  if (failed) { pr.fail(errMsg(failed)); return false; }
   const d = await call("file.done", { id });
-  if (d.t === "error") { pr.fail(errText(d.code, d.err)); return false; }
+  if (d.t === "error") { pr.fail(errMsg(d)); return false; }
   pr.ok();
   return true;
 }
@@ -641,7 +848,7 @@ async function download(path) {
           const last = got;
           p.timer = setTimeout(() => {
             if (got === last && pending.delete(r.id)) resolve({ t: "error", code: "LINK" });
-            else watch();
+            else if (pending.has(r.id)) watch();
           }, 15000);
         };
         watch();
@@ -649,7 +856,7 @@ async function download(path) {
     });
   });
   const r = await done;
-  if (r.t === "error") { (pr || progress(false, path, 0)).fail(errText(r.code, r.err)); return; }
+  if (r.t === "error") { (pr || progress(false, path, 0)).fail(errMsg(r)); return; }
   if (h.hex() !== sha) { pr.fail(errText("HASH_MISMATCH")); return; }
   pr.ok();
   const bridge = window.WaymarkAndroid;
@@ -690,14 +897,16 @@ function progress(up, path, total) {
 function ended(key, detail) {
   if (phase === "ended") return;
   phase = "ended";
+  linking = false;
+  kick && kick();
   clearInterval(pinger);
   clearTimeout(openTimer);
-  for (const [, p] of pending) { clearTimeout(p.timer); p.resolve({ t: "error", code: "LINK" }); }
-  pending.clear();
+  failPending();
   try { wakeLock && wakeLock.release(); } catch {}
   try { window.WaymarkAndroid?.keepAwake(false); } catch {}
-  try { pc && pc.close(); } catch {}
+  closePC();
   A = null;
+  path = "";
   $("topStatus").innerHTML = "";
   $("endTitle").textContent = key ? T(key) : detail || T("w_ended");
   show("sEnd");
@@ -707,7 +916,7 @@ function restart() {
   phase = "pair";
   acked = false;
   agent = null;
-  pc = dc = null;
+  closePC();
   $("btnConnect").disabled = true;
   msg("codeMsg", "");
   show("sStart");
@@ -723,8 +932,20 @@ function boot() {
   $("btnConnect").onclick = () => connect().catch((e) => msg("codeMsg", e.message));
   $("btnAgain").onclick = restart;
   setInterval(() => phase === "live" && renderTop(), 1000);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && keepAwake());
+  // Back on a network: try now rather than at the next turn.
+  window.addEventListener("online", () => kick && kick());
+  R = loadR();
   if (location.hash.includes("WM1.")) takeQR(location.hash.slice(1));
-  else show("sStart");
+  else if (R) {
+    // A reload or a new visit within the resume time: straight back in.
+    myName = R.name || defaultName();
+    agent = { id: R.id, role: R.role, state: null };
+    phase = "live";
+    enterLive();
+    renderLive();
+    relink();
+  } else show("sStart");
 }
 
 boot();

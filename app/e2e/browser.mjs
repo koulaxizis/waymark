@@ -58,7 +58,18 @@ try {
   await page.waitForFunction(() => document.getElementById("cSlide").textContent === "2 / 5", null, { timeout: 10000 });
   const slide = await page.textContent("#cSlide");
   await shot("5-pres");
-  log(JSON.stringify({ SAS: sas, Slide: slide }));
+  // A reload drops the link; the page comes back by itself with the key it
+  // kept, no QR, and the presenter still holds the control.
+  await page.reload();
+  await page.waitForSelector("#sLive:not([hidden])", { timeout: 10000 });
+  await page.waitForSelector("#topStatus .status.ok", { timeout: 60000 });
+  await page.waitForFunction(() => document.getElementById("cSlide").textContent === "2 / 5", null, { timeout: 10000 });
+  log("resumed:", await page.textContent("#topStatus"));
+  await page.click("#bNext");
+  await page.waitForFunction(() => document.getElementById("cSlide").textContent === "3 / 5", null, { timeout: 10000 });
+  const resumed = await page.textContent("#cSlide");
+  await shot("6-resumed");
+  log(JSON.stringify({ SAS: sas, Slide: slide, Resumed: resumed }));
 } finally {
   await browser.close();
 }
