@@ -65,7 +65,7 @@ jobs:
           cache-dependency-path: app/go.sum
       - name: Linux libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2t64
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2t64 desktop-file-utils
       - name: Vet and package
         run: |
           TAGS=desktop,production
