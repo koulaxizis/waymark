@@ -65,11 +65,15 @@ jobs:
           cache-dependency-path: app/go.sum
       - name: Linux libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - name: Build
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libfuse2t64
+      - name: Vet and package
         run: |
           TAGS=desktop,production
           [ "$RUNNER_OS" = Linux ] && TAGS=$TAGS,webkit2_41
           go vet -tags $TAGS ./cmd/waymark-remote
-          go build -trimpath -tags $TAGS -ldflags "-s -w -X main.Version=0.0.0-ci" -o waymark-remote ./cmd/waymark-remote
-          ls -la waymark-remote
+          scripts/package.sh $([ "$RUNNER_OS" = Linux ] && echo linux || echo macos) 0.0.0-ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: waymark-remote-${{ runner.os }}
+          path: app/dist/*
+          retention-days: 14
