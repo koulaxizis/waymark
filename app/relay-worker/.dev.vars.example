@@ -1,0 +1,2 @@
+# The access key the Controller sends; leave empty only for a private test.
+ACCESS_KEY=

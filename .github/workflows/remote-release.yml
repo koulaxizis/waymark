@@ -2,7 +2,8 @@ name: Waymark Remote release
 
 # A tag such as v0.1.0 builds every portable package and publishes a GitHub
 # Release with SHA256SUMS.txt: Windows exe, Linux AppImage, macOS .app (zip)
-# and, when the signing secrets exist, the Android APK. The app's update
+# waymark-relay for Linux, Windows and macOS, and, when the signing secrets
+# exist, the Android APK. The app's update
 # notice reads the latest stable release, so tag only versions that passed
 # the tests on real machines. Tags with a suffix (v0.2.0-rc1) become
 # pre-releases and are not offered.
@@ -34,6 +35,11 @@ jobs:
           mkdir -p dist
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
             -ldflags "-s -w -H windowsgui -X main.Version=${V}" -o dist/WaymarkRemote-${V}-windows-x64.exe ./cmd/waymark-remote
+          # waymark-relay for your own server (the Worker in relay-worker/ is the other way).
+          for t in linux/amd64 linux/arm64 windows/amd64 darwin/arm64; do
+            os=${t%/*}; arch=${t#*/}; ext=""; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/waymark-relay-${V}-${os}-${arch}${ext} ./cmd/waymark-relay
+          done
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: app/dist/* }
 

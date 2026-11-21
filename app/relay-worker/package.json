@@ -1,0 +1,12 @@
+{
+  "name": "waymark-relay",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

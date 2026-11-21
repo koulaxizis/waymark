@@ -11,6 +11,7 @@ package pair
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/koulaxizis/waymark/app/internal/code"
 	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/proto"
+	"github.com/koulaxizis/waymark/app/internal/relay"
 	"github.com/koulaxizis/waymark/app/internal/secure"
 )
 
@@ -102,6 +104,16 @@ type Listener struct {
 	// OnCode is called whenever the code changes (after a pairing or after
 	// MaxFails wrong attempts).
 	OnCode func()
+
+	done      chan struct{} // closed by Close
+	closeOnce sync.Once
+	room      string        // this Controller's room on a relay
+	relay     *relay.Config // nil: no relay
+	relayKick chan struct{}
+	// OnRelay reports whether the relay takes this Controller's socket:
+	// nil when it does, the error when it does not. Called on changes only.
+	OnRelay   func(err error)
+	relayOnce sync.Once
 }
 
 // Listen opens a TCP port in 49152-65535 on every IPv4 interface.
@@ -115,7 +127,9 @@ func Listen(name string, role proto.Role) (*Listener, error) {
 		port := 49152 + int(randUint32()%16384)
 		ln, err = net.Listen("tcp4", ":"+strconv.Itoa(port))
 		if err == nil {
-			l := &Listener{Name: name, Role: role, ln: ln, port: port, pairs: map[string]*known{}, listAddrs: ListAddrs}
+			l := &Listener{Name: name, Role: role, ln: ln, port: port, pairs: map[string]*known{}, listAddrs: ListAddrs,
+				results: make(chan accepted), done: make(chan struct{}), relayKick: make(chan struct{}, 1),
+				room: hex.EncodeToString(secure.RandBytes(16))}
 			l.secret = randUint32() & (1<<30 - 1)
 			return l, nil
 		}
@@ -134,8 +148,106 @@ func randUint32() uint32 {
 // Port is the listening port.
 func (l *Listener) Port() int { return l.port }
 
-// Close stops listening.
-func (l *Listener) Close() error { return l.ln.Close() }
+// Close stops listening, on the network and on the relay.
+func (l *Listener) Close() error {
+	l.closeOnce.Do(func() { close(l.done) })
+	return l.ln.Close()
+}
+
+// SetRelay sets the relay the Agents fall back to when no network answers
+// (Proposal 13, 0.1.1); an empty url turns it off. The Agents learn it with
+// the next address list.
+func (l *Listener) SetRelay(url, key string) {
+	l.mu.Lock()
+	if url = relay.CleanURL(url); url == "" {
+		l.relay = nil
+	} else {
+		l.relay = &relay.Config{URL: url, Key: key, Room: l.room}
+	}
+	l.mu.Unlock()
+	l.relayOnce.Do(func() { go l.relayLoop() })
+	select {
+	case l.relayKick <- struct{}{}:
+	default:
+	}
+}
+
+// relayLoop keeps one socket waiting in this Controller's room; each Agent
+// that joins gets a handshake like one over TCP, and a new socket waits.
+func (l *Listener) relayLoop() {
+	backoff := time.Second
+	var last error = errors.New("off")
+	report := func(err error) {
+		if (err == nil) != (last == nil) || (err != nil && err.Error() != last.Error()) {
+			last = err
+			if l.OnRelay != nil {
+				l.OnRelay(err)
+			}
+		}
+	}
+	for {
+		l.mu.Lock()
+		cfg := l.relay
+		l.mu.Unlock()
+		if cfg == nil {
+			last = errors.New("off")
+			select {
+			case <-l.done:
+				return
+			case <-l.relayKick:
+			}
+			continue
+		}
+		// A new setting or Close stops the socket that waits now.
+		stop := make(chan struct{})
+		got := make(chan struct{})
+		kicked := make(chan bool, 1)
+		go func() {
+			k := false
+			select {
+			case <-l.done:
+			case <-l.relayKick:
+				k = true
+			case <-got:
+			}
+			kicked <- k
+			close(stop)
+		}()
+		c, err := relay.Wait(*cfg, stop)
+		close(got)
+		k := <-kicked
+		select {
+		case <-l.done:
+			if c != nil {
+				c.Close()
+			}
+			return
+		default:
+		}
+		if k {
+			if c != nil {
+				go l.serveConn(c)
+			}
+			backoff = time.Second
+			continue
+		}
+		if err != nil {
+			report(err)
+			select {
+			case <-l.done:
+				return
+			case <-l.relayKick:
+				backoff = time.Second
+			case <-time.After(backoff):
+				backoff = min(backoff*2, 30*time.Second)
+			}
+			continue
+		}
+		report(nil)
+		backoff = time.Second
+		go l.serveConn(c)
+	}
+}
 
 // Code is one way to type the Controller address.
 type Code struct {
@@ -166,7 +278,16 @@ func (l *Listener) Codes() []Code {
 
 // Addrs is every address of this Controller, best network first, for the
 // Agents to reconnect over another path when one is lost.
-func (l *Listener) Addrs() proto.AddrsData { return l.listAddrs(l.port) }
+func (l *Listener) Addrs() proto.AddrsData {
+	d := l.listAddrs(l.port)
+	l.mu.Lock()
+	if l.relay != nil {
+		r := *l.relay
+		d.Relay = &r
+	}
+	l.mu.Unlock()
+	return d
+}
 
 // ListAddrs builds the address list; tests replace it.
 var ListAddrs = func(port int) proto.AddrsData {
@@ -206,30 +327,39 @@ type accepted struct {
 // reconnect on another path.
 func (l *Listener) Accept() (*Session, error) {
 	l.acceptOnce.Do(func() {
-		l.results = make(chan accepted)
 		go func() {
 			for {
 				c, err := l.ln.Accept()
 				if err != nil {
-					l.results <- accepted{err: err}
-					close(l.results)
+					l.closeOnce.Do(func() { close(l.done) })
 					return
 				}
-				go func(c net.Conn) {
-					s, err := l.handshake(c)
-					if err != nil {
-						c.Close()
-					}
-					l.results <- accepted{s, err}
-				}(c)
+				go l.serveConn(c)
 			}
 		}()
 	})
-	r, ok := <-l.results
-	if !ok {
+	select {
+	case r := <-l.results:
+		return r.s, r.err
+	case <-l.done:
 		return nil, net.ErrClosed
 	}
-	return r.s, r.err
+}
+
+// serveConn runs the handshake on one connection, from the network or the
+// relay, and hands the result to Accept.
+func (l *Listener) serveConn(c net.Conn) {
+	s, err := l.handshake(c)
+	if err != nil {
+		c.Close()
+	}
+	select {
+	case l.results <- accepted{s, err}:
+	case <-l.done:
+		if s != nil {
+			s.Conn.Close()
+		}
+	}
 }
 
 func (l *Listener) handshake(c net.Conn) (*Session, error) {
@@ -353,6 +483,7 @@ type Pairing struct {
 	mu    sync.Mutex
 	addrs []proto.Addr // the Controller's addresses, best first
 	port  int
+	relay *relay.Config
 }
 
 // Path is one way to the Controller: its address and the kind of network.
@@ -369,8 +500,16 @@ func (p *Pairing) SetAddrs(d proto.AddrsData) {
 	p.mu.Lock()
 	p.port = d.Port
 	p.addrs = append([]proto.Addr(nil), d.Addrs...)
+	p.relay = nil
+	if d.Relay.Valid() {
+		r := *d.Relay
+		p.relay = &r
+	}
 	p.mu.Unlock()
 }
+
+// RelayAddr is the Addr of the relay path in Paths.
+const RelayAddr = "relay"
 
 // Paths lists where to try, best first.
 func (p *Pairing) Paths() []Path {
@@ -382,7 +521,16 @@ func (p *Pairing) Paths() []Path {
 			out = append(out, Path{Addr: net.JoinHostPort(ip.String(), strconv.Itoa(p.port)), Kind: a.Kind})
 		}
 	}
+	if p.relay != nil {
+		out = append(out, Path{Addr: RelayAddr, Kind: netif.Relay})
+	}
 	return out
+}
+
+func (p *Pairing) relayCfg() *relay.Config {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.relay
 }
 
 // Prompt asks the presenter to accept: it shows the number, who asks and in
@@ -485,7 +633,7 @@ func ResumeOver(p *Pairing, paths []Path) (*secure.Conn, Path, error) {
 	if len(paths) == 0 {
 		return nil, Path{}, errors.New("no address of the Controller is known")
 	}
-	conn, i, err := dialBest(paths)
+	conn, i, err := dialBest(paths, p.relayCfg())
 	if err != nil {
 		return nil, Path{}, err
 	}
@@ -497,19 +645,55 @@ func ResumeOver(p *Pairing, paths []Path) (*secure.Conn, Path, error) {
 }
 
 // dialBest dials every path at once and keeps the best one that answers,
-// waiting PreferWait after the first answer for a better one.
-func dialBest(paths []Path) (net.Conn, int, error) {
+// waiting PreferWait after the first answer for a better one. The relay is
+// dialled only once every network path has failed or DialTimeout is over,
+// so it never wins over a network that is merely slow.
+func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	type res struct {
 		c net.Conn
 		i int
 		e error
 	}
 	ch := make(chan res, len(paths))
+	locals := 0
+	for _, pt := range paths {
+		if pt.Kind != netif.Relay {
+			locals++
+		}
+	}
+	var lmu sync.Mutex
+	localsFailed := make(chan struct{})
+	failed := func() {
+		lmu.Lock()
+		if locals--; locals == 0 {
+			close(localsFailed)
+		}
+		lmu.Unlock()
+	}
+	if locals == 0 {
+		close(localsFailed)
+	}
 	for i, pt := range paths {
-		go func(i int, a string) {
-			c, err := net.DialTimeout("tcp4", a, DialTimeout)
+		go func(i int, pt Path) {
+			if pt.Kind == netif.Relay {
+				select {
+				case <-localsFailed:
+				case <-time.After(DialTimeout):
+				}
+				if rc == nil {
+					ch <- res{nil, i, errors.New("relay not set")}
+					return
+				}
+				c, err := relay.Dial(*rc, "a", 2*DialTimeout+5*time.Second)
+				ch <- res{c, i, err}
+				return
+			}
+			c, err := net.DialTimeout("tcp4", pt.Addr, DialTimeout)
+			if err != nil {
+				failed()
+			}
 			ch <- res{c, i, err}
-		}(i, pt.Addr)
+		}(i, pt)
 	}
 	var best *res
 	var first error

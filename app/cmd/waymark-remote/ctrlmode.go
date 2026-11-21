@@ -30,6 +30,9 @@ func (a *App) startController() error {
 	}
 	a.mu.Lock()
 	a.ctrl = c
+	if a.cfg.RelayURL != "" {
+		c.SetRelay(a.cfg.RelayURL, a.cfg.RelayKey)
+	}
 	a.mu.Unlock()
 	a.logf("Controller ready")
 	go a.watchOperatorFolders()

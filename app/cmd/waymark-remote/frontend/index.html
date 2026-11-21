@@ -237,6 +237,12 @@
     <select id="sTheme"><option value="dark" data-i18n="dark"></option><option value="light" data-i18n="light"></option></select></label>
   <label class="field"><span data-i18n="nameLabel"></span><input id="sName" type="text" maxlength="60"></label>
   <label class="row small" style="margin-bottom:8px"><input id="sUpdate" type="checkbox"> <span data-i18n="updateCheck"></span></label>
+  <fieldset id="sRelayBox" class="field">
+    <legend data-i18n="relayTitle"></legend>
+    <p class="small muted" data-i18n="relayLead"></p>
+    <label class="field"><span data-i18n="relayUrl"></span><input id="sRelayUrl" type="url" placeholder="https://waymark-relay.example.workers.dev" autocomplete="off" spellcheck="false"></label>
+    <label class="field"><span data-i18n="relayKey"></span><input id="sRelayKey" type="password" autocomplete="off" spellcheck="false"></label>
+  </fieldset>
   <div class="row small" style="margin-bottom:12px"><button id="btnCheckNow" class="btn ghost" data-i18n="checkNow"></button><span id="checkMsg" class="muted"></span></div>
   <p class="small muted"><span data-i18n="version"></span> <span id="sVersion" class="num"></span></p>
   <div class="row end">
