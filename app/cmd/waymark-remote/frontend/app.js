@@ -17,6 +17,12 @@ async function boot() {
   setTheme(info.config.theme || "dark");
   applyI18n();
   wireCommon();
+  if (!info.config.updateAsked) {
+    // First start: the update check goes to GitHub, so it waits for a yes.
+    const yes = await ask(T("updateAsk"), undefined, T("yes"), T("no"));
+    try { await go().AnswerUpdateQuestion(yes === true); } catch {}
+    info = await go().GetInfo();
+  }
   const mode = info.running || info.config.mode;
   if (info.running) {
     showMode(info.running);
@@ -447,11 +453,14 @@ function initController() {
   });
 }
 
-// ask shows a question; with a value it also shows a text field.
-function ask(text, value) {
+// ask shows a question; with a value it also shows a text field. yes and no
+// replace the button labels (OK, Cancel) when given.
+function ask(text, value, yes, no) {
   return new Promise((resolve) => {
     const d = $("askDlg"), inp = $("askInput");
     $("askText").textContent = text;
+    $("askYes").textContent = yes || T("ok");
+    $("askNo").textContent = no || T("cancel");
     inp.hidden = value === undefined;
     inp.value = value ?? "";
     const done = (v) => { d.close(); resolve(v); };

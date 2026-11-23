@@ -2,6 +2,10 @@
 
 All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 
+## 0.1.2 (unreleased)
+
+- The update check asks first: on the first start the app asks whether to look for new stable versions, because the check sends one request to GitHub, which sees the IP address. Until the answer, and after a no, nothing is sent. Settings keeps the switch. Earlier versions had it on without asking; they are asked once too (compliance audit 2026-11-23, proposal 5).
+
 ## 0.1.1 (unreleased)
 
 - Relay for when the computers share no network (Proposal 13): the last path after cable, Wi-Fi and mobile data. Off by default. Set its address and access key once in the Controller's Settings; paired Agents learn it over the encrypted link. The relay joins two WebSockets and sees only the encrypted channel. The link moves back to a network as soon as one answers. Both ends show "over relay (internet)".
