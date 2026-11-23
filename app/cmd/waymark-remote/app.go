@@ -31,7 +31,10 @@ type Config struct {
 	Theme       string     `json:"theme"`
 	Folder      string     `json:"folder"`      // Agent folder; "" = Waymark next to the exe
 	UpdateCheck bool       `json:"updateCheck"` // look for a new stable version at start
-	App         string     `json:"app"`         // preferred application: auto, powerpoint, viewer, ...
+	// UpdateAsked: the user has answered the first-start question about the
+	// update check (0.1.2). Until then the app sends nothing to GitHub.
+	UpdateAsked bool   `json:"updateAsked"`
+	App         string `json:"app"` // preferred application: auto, powerpoint, viewer, ...
 	// RelayURL and RelayKey: the relay a Controller offers its Agents for
 	// when they share no network (0.1.1). Off when RelayURL is empty.
 	RelayURL string `json:"relayUrl"`
@@ -61,7 +64,7 @@ type promptAnswer struct {
 
 func NewApp() *App {
 	a := &App{path: filepath.Join(dataDir(), "waymark-remote.json")}
-	a.cfg = Config{Lang: "el", Theme: "dark", UpdateCheck: true, App: "auto"}
+	a.cfg = Config{Lang: "el", Theme: "dark", App: "auto"}
 	if b, err := os.ReadFile(a.path); err == nil {
 		json.Unmarshal(b, &a.cfg)
 	}
@@ -75,9 +78,24 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	wr.OnFileDrop(ctx, a.onDrop)
-	if a.cfg.UpdateCheck {
+	// The update check sends one request to GitHub (and with it the IP
+	// address), so it runs only after the user said yes to it.
+	if a.cfg.UpdateAsked && a.cfg.UpdateCheck {
 		go a.checkUpdate()
 	}
+}
+
+// AnswerUpdateQuestion stores the answer to the first-start question
+// "Check for new versions?" and, on yes, checks once now.
+func (a *App) AnswerUpdateQuestion(yes bool) error {
+	a.mu.Lock()
+	a.cfg.UpdateAsked, a.cfg.UpdateCheck = true, yes
+	err := a.save()
+	a.mu.Unlock()
+	if yes {
+		go a.checkUpdate()
+	}
+	return err
 }
 
 func (a *App) save() error {
@@ -122,6 +140,7 @@ func (a *App) SaveSettings(c Config) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cfg.Lang, a.cfg.Theme, a.cfg.UpdateCheck = c.Lang, c.Theme, c.UpdateCheck
+	a.cfg.UpdateAsked = true // a choice in the settings is an answer too
 	if c.App != "" {
 		a.cfg.App = c.App
 	}
