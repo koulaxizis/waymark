@@ -5,6 +5,7 @@ All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 ## 0.1.2 (unreleased)
 
 - The update check asks first: on the first start the app asks whether to look for new stable versions, because the check sends one request to GitHub, which sees the IP address. Until the answer, and after a no, nothing is sent. Settings keeps the switch. Earlier versions had it on without asking; they are asked once too (compliance audit 2026-11-23, proposal 5).
+- The settings file `waymark-remote.json` and the auto-send ledger are written readable by the owner only (0600 on macOS and Linux), since the settings can hold the relay access key. Settings explains that the key is stored unencrypted next to the app (proposal 6).
 
 ## 0.1.1 (unreleased)
 
