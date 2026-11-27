@@ -1,12 +1,12 @@
 # Waymark
 
-> Waymark is a free, open-source (MIT) suite of lightweight tools for sound engineering, AV and conferences, published at waymarked.site. Every tool is portable and runs locally and offline, with no installation, admin rights, accounts or cloud server. Status: in design, no release and no downloads yet.
+> Waymark is a free, open-source (MIT) suite of lightweight tools for sound engineering, AV and conferences, published at waymarked.site. Every tool is portable and runs locally and offline, with no installation, admin rights, accounts or cloud server needed. Status: in testing, no stable release yet.
 
 ## Principles
 
 - Portable apps (one file per system) and the web only; no installers, no admin rights, runs from USB
 - Local and offline: devices talk directly over the venue's local network; presentation content never leaves it
-- No cloud server, accounts, cookies, telemetry, ads or paid services
+- No cloud server needed, no accounts, cookies, telemetry, ads or paid services; an optional self-hosted relay joins two computers with no shared network and sees only encrypted data
 - MIT licence; built first for real events, then given freely
 - Dark theme by default plus a light theme; Greek and English; 24-hour clock
 
@@ -39,6 +39,6 @@ Logos, wallpapers, banners, print files, palette and press texts (EN, EL): https
 
 ## Ελληνικά
 
-Το Waymark είναι δωρεάν σειρά εργαλείων ανοιχτού κώδικα (MIT) για ηχοληψία, οπτικοακουστικά και συνέδρια. Portable, τοπικά και offline, χωρίς εγκατάσταση ή cloud. Πρώτο εργαλείο: Waymark Remote. Βρίσκεται σε σχεδιασμό, χωρίς έκδοση ακόμη.
+Το Waymark είναι δωρεάν σειρά εργαλείων ανοιχτού κώδικα (MIT) για ηχοληψία, οπτικοακουστικά και συνέδρια. Portable, τοπικά και offline, χωρίς εγκατάσταση ή ανάγκη για cloud. Πρώτο εργαλείο: Waymark Remote. Βρίσκεται σε δοκιμές, χωρίς σταθερή έκδοση ακόμη.
 
 Designed by Christos Koulaxizis.
