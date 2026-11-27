@@ -1,6 +1,7 @@
 // Package netif lists the IPv4 addresses of this machine with the kind of
 // network each one is on, so a connection can prefer a cable over Wi-Fi and
-// Wi-Fi over a phone's mobile data (Proposal 13 of the Doc).
+// Wi-Fi over a phone's mobile data (Proposal 13 of the Doc), and keeps
+// Bluetooth for last (Proposal 14).
 package netif
 
 import (
@@ -11,11 +12,12 @@ import (
 
 // Kinds, best first.
 const (
-	Wired = "wired"
-	WiFi  = "wifi"
-	Cell  = "cell"  // mobile data: a USB or Bluetooth phone, a 4G/5G modem
-	Other = "other" // virtual adapters, VPNs, unknown
-	Relay = "relay" // not an interface: the relay over the internet, last resort
+	Wired     = "wired"
+	WiFi      = "wifi"
+	Cell      = "cell"      // mobile data: a USB phone, a 4G/5G modem
+	Other     = "other"     // virtual adapters, VPNs, unknown
+	Relay     = "relay"     // not an interface: the relay over the internet
+	Bluetooth = "bluetooth" // a Bluetooth network (a phone's Bluetooth tethering) or link: slow, last resort
 )
 
 // Rank orders kinds: lower is better.
@@ -29,6 +31,8 @@ func Rank(kind string) int {
 		return 2
 	case Relay:
 		return 4
+	case Bluetooth:
+		return 5
 	}
 	return 3
 }
@@ -88,6 +92,9 @@ func KindOf(ip net.IP) string {
 func guess(name string) string {
 	n := strings.ToLower(name)
 	switch {
+	case strings.Contains(n, "bluetooth"), strings.HasPrefix(n, "bnep"), strings.HasPrefix(n, "bt-pan"),
+		len(n) > 3 && strings.HasPrefix(n, "pan") && n[3] >= '0' && n[3] <= '9':
+		return Bluetooth
 	case strings.Contains(n, "wi-fi"), strings.Contains(n, "wifi"), strings.Contains(n, "wlan"),
 		strings.Contains(n, "wireless"), strings.HasPrefix(n, "wl"):
 		return WiFi

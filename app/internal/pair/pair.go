@@ -16,12 +16,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"filippo.io/cpace"
 
+	"github.com/koulaxizis/waymark/app/internal/btlink"
 	"github.com/koulaxizis/waymark/app/internal/code"
 	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/proto"
@@ -114,6 +117,8 @@ type Listener struct {
 	// nil when it does, the error when it does not. Called on changes only.
 	OnRelay   func(err error)
 	relayOnce sync.Once
+	btln      net.Listener // nil: no Bluetooth adapter
+	btAddr    string
 }
 
 // Listen opens a TCP port in 49152-65535 on every IPv4 interface.
@@ -131,6 +136,9 @@ func Listen(name string, role proto.Role) (*Listener, error) {
 				results: make(chan accepted), done: make(chan struct{}), relayKick: make(chan struct{}, 1),
 				room: hex.EncodeToString(secure.RandBytes(16))}
 			l.secret = randUint32() & (1<<30 - 1)
+			if bl, ba, err := BTListen(); err == nil {
+				l.btln, l.btAddr = bl, ba.String()
+			}
 			return l, nil
 		}
 	}
@@ -148,9 +156,21 @@ func randUint32() uint32 {
 // Port is the listening port.
 func (l *Listener) Port() int { return l.port }
 
-// Close stops listening, on the network and on the relay.
+// BT is this Controller's Bluetooth link address, "" without an adapter.
+func (l *Listener) BT() string { return l.btAddr }
+
+// BTListen opens the Bluetooth link; tests replace it.
+var BTListen = btlink.Listen
+
+// DialBT dials a Bluetooth address; tests replace it.
+var DialBT = btlink.Dial
+
+// Close stops listening, on the network, the relay and Bluetooth.
 func (l *Listener) Close() error {
 	l.closeOnce.Do(func() { close(l.done) })
+	if l.btln != nil {
+		l.btln.Close()
+	}
 	return l.ln.Close()
 }
 
@@ -286,6 +306,7 @@ func (l *Listener) Addrs() proto.AddrsData {
 		d.Relay = &r
 	}
 	l.mu.Unlock()
+	d.BT = l.btAddr
 	return d
 }
 
@@ -337,6 +358,17 @@ func (l *Listener) Accept() (*Session, error) {
 				go l.serveConn(c)
 			}
 		}()
+		if l.btln != nil {
+			go func() {
+				for {
+					c, err := l.btln.Accept()
+					if err != nil {
+						return // Close, or the adapter went away
+					}
+					go l.serveConn(c)
+				}
+			}()
+		}
 	})
 	select {
 	case r := <-l.results:
@@ -484,6 +516,7 @@ type Pairing struct {
 	addrs []proto.Addr // the Controller's addresses, best first
 	port  int
 	relay *relay.Config
+	bt    string // the Controller's Bluetooth link, "" if none
 }
 
 // Path is one way to the Controller: its address and the kind of network.
@@ -494,12 +527,16 @@ type Path struct {
 
 // SetAddrs stores the Controller's current addresses (a TAddrs message).
 func (p *Pairing) SetAddrs(d proto.AddrsData) {
-	if d.Port <= 0 || d.Port > 65535 || len(d.Addrs) == 0 {
+	if d.Port <= 0 || d.Port > 65535 || len(d.Addrs) == 0 && d.BT == "" {
 		return
 	}
 	p.mu.Lock()
 	p.port = d.Port
 	p.addrs = append([]proto.Addr(nil), d.Addrs...)
+	p.bt = ""
+	if _, err := btlink.ParseAddr(d.BT); err == nil {
+		p.bt = d.BT
+	}
 	p.relay = nil
 	if d.Relay.Valid() {
 		r := *d.Relay
@@ -510,6 +547,9 @@ func (p *Pairing) SetAddrs(d proto.AddrsData) {
 
 // RelayAddr is the Addr of the relay path in Paths.
 const RelayAddr = "relay"
+
+// btPrefix marks a Bluetooth link address in Paths.
+const btPrefix = "bt:"
 
 // Paths lists where to try, best first.
 func (p *Pairing) Paths() []Path {
@@ -524,8 +564,18 @@ func (p *Pairing) Paths() []Path {
 	if p.relay != nil {
 		out = append(out, Path{Addr: RelayAddr, Kind: netif.Relay})
 	}
+	if p.bt != "" {
+		out = append(out, Path{Addr: btPrefix + p.bt, Kind: netif.Bluetooth})
+	}
+	// The relay goes before a Bluetooth network, which is slower still.
+	sort.SliceStable(out, func(i, j int) bool { return netif.Rank(out[i].Kind) < netif.Rank(out[j].Kind) })
 	return out
 }
+
+// slow paths are dialled only once every other path has failed or
+// DialTimeout is over, so they never win over a network that is merely slow
+// to answer.
+func slow(kind string) bool { return kind == netif.Relay || kind == netif.Bluetooth }
 
 func (p *Pairing) relayCfg() *relay.Config {
 	p.mu.Lock()
@@ -645,9 +695,9 @@ func ResumeOver(p *Pairing, paths []Path) (*secure.Conn, Path, error) {
 }
 
 // dialBest dials every path at once and keeps the best one that answers,
-// waiting PreferWait after the first answer for a better one. The relay is
-// dialled only once every network path has failed or DialTimeout is over,
-// so it never wins over a network that is merely slow.
+// waiting PreferWait after the first answer for a better one. The relay and
+// Bluetooth are dialled only once every other path has failed or
+// DialTimeout is over (see slow).
 func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	type res struct {
 		c net.Conn
@@ -657,7 +707,7 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	ch := make(chan res, len(paths))
 	locals := 0
 	for _, pt := range paths {
-		if pt.Kind != netif.Relay {
+		if !slow(pt.Kind) {
 			locals++
 		}
 	}
@@ -675,11 +725,13 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	}
 	for i, pt := range paths {
 		go func(i int, pt Path) {
-			if pt.Kind == netif.Relay {
+			if slow(pt.Kind) {
 				select {
 				case <-localsFailed:
 				case <-time.After(DialTimeout):
 				}
+			}
+			if pt.Kind == netif.Relay {
 				if rc == nil {
 					ch <- res{nil, i, errors.New("relay not set")}
 					return
@@ -688,8 +740,15 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 				ch <- res{c, i, err}
 				return
 			}
-			c, err := net.DialTimeout("tcp4", pt.Addr, DialTimeout)
-			if err != nil {
+			var c net.Conn
+			var err error
+			if bt, ok := strings.CutPrefix(pt.Addr, btPrefix); ok {
+				// Paging a computer and checking the pairing takes seconds.
+				c, err = DialBT(bt, 4*DialTimeout)
+			} else {
+				c, err = net.DialTimeout("tcp4", pt.Addr, DialTimeout)
+			}
+			if err != nil && !slow(pt.Kind) {
 				failed()
 			}
 			ch <- res{c, i, err}

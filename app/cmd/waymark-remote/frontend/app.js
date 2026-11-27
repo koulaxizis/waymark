@@ -240,7 +240,7 @@ function closeInvite() {
 }
 
 function pathLabel(k) {
-  return T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay"].includes(k) ? k : "other")));
+  return T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay", "bluetooth"].includes(k) ? k : "other")));
 }
 
 async function resumePhone() {

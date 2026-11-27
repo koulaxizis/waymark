@@ -4,6 +4,9 @@ All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 
 ## 0.1.2 (unreleased)
 
+- Bluetooth as the last way (Proposal 14): when a phone shares its connection over Bluetooth and the computer joins it, Waymark takes that network as a Bluetooth path. The order is cable, Wi-Fi, mobile data, relay, Bluetooth; Bluetooth is tried only when the others fail, and the link moves back as soon as a better path answers. Both ends show "over Bluetooth".
+- Bluetooth link between two computers (Proposal 14): the Controller opens a Bluetooth serial channel (RFCOMM) next to its network port, and paired Agents learn its address over the encrypted link. When cable, Wi-Fi, mobile data and the relay all fail, the Agent reconnects over Bluetooth, and moves back as soon as a network answers. Windows and Linux, no admin rights; the two computers must be paired once in the system's Bluetooth settings. About 100 to 250 KB/s within some 10 m: enough for slide commands, slow for large files, which resume where they stopped. macOS and the phone come later.
+- Bluetooth clicker in the Android app (Proposal 14): the phone becomes a Bluetooth keyboard for the presentation computer, with Next, Previous, Start, Black screen and End (Page Down, Page Up, F5, B, Esc). It works with any presentation program, with no Agent and no network. While connected, the volume buttons change slides. Pair once from the computer's Bluetooth settings. Android 9 or later, on phones that keep the Bluetooth keyboard profile; it asks for the "Nearby devices" permission.
 - The update check asks first: on the first start the app asks whether to look for new stable versions, because the check sends one request to GitHub, which sees the IP address. Until the answer, and after a no, nothing is sent. Settings keeps the switch. Earlier versions had it on without asking; they are asked once too (compliance audit 2026-11-23, proposal 5).
 
 ## 0.1.1 (unreleased)

@@ -35,7 +35,9 @@ func hardwarePorts() map[string]string {
 				switch {
 				case p == "wi-fi" || p == "airport":
 					ports[dev] = WiFi
-				case strings.Contains(p, "iphone") || strings.Contains(p, "bluetooth pan") || strings.Contains(p, "modem"):
+				case strings.Contains(p, "bluetooth"):
+					ports[dev] = Bluetooth
+				case strings.Contains(p, "iphone") || strings.Contains(p, "modem"):
 					ports[dev] = Cell
 				case strings.Contains(p, "ethernet") || strings.Contains(p, "lan") || strings.Contains(p, "usb 10/100"):
 					ports[dev] = Wired
