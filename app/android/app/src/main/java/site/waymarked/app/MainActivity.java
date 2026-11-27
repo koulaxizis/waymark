@@ -415,7 +415,8 @@ public class MainActivity extends Activity {
                 i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120);
                 try {
                     startActivity(i);
-                } catch (ActivityNotFoundException ignored) {
+                } catch (ActivityNotFoundException | SecurityException ignored) {
+                    // no settings screen, or the permission was taken back
                 }
             });
         }
