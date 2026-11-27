@@ -130,6 +130,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (clicker != null) clicker.stop(); // the keyboard goes away with the app
         web.destroy();
         super.onDestroy();
     }
@@ -295,12 +296,6 @@ public class MainActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(e);
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (clicker != null) clicker.stop();
-        super.onDestroy();
     }
 
     /**
