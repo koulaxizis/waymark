@@ -4,6 +4,7 @@ All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 
 ## 0.1.2 (unreleased)
 
+- Builds use Go 1.26.11 (toolchain line in go.mod; was 1.26.0, eleven security releases behind) and pion/webrtc v4.2.29 (weekly repo health 2026-11-24, findings 1 and 3).
 - The update check asks first: on the first start the app asks whether to look for new stable versions, because the check sends one request to GitHub, which sees the IP address. Until the answer, and after a no, nothing is sent. Settings keeps the switch. Earlier versions had it on without asking; they are asked once too (compliance audit 2026-11-23, proposal 5).
 
 ## 0.1.1 (unreleased)

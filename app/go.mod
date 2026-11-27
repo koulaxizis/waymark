@@ -2,13 +2,15 @@ module github.com/koulaxizis/waymark/app
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	filippo.io/cpace v0.0.0-20210101143347-24d601e2e469
 	github.com/go-ole/go-ole v1.3.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/ice/v4 v4.4.9
 	github.com/pion/logging v0.2.4
-	github.com/pion/webrtc/v4 v4.2.27
+	github.com/pion/webrtc/v4 v4.2.29
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.10.2
 	golang.org/x/crypto v0.59.0
