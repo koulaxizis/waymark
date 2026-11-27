@@ -21,4 +21,11 @@
     <xhtml:link rel="alternate" hreflang="el" href="https://waymarked.site/media-kit/?lang=el"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://waymarked.site/media-kit/"/>
   </url>
+  <url>
+    <loc>https://waymarked.site/privacy/</loc>
+    <lastmod>2026-11-27</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://waymarked.site/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="el" href="https://waymarked.site/privacy/?lang=el"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://waymarked.site/privacy/"/>
+  </url>
 </urlset>
