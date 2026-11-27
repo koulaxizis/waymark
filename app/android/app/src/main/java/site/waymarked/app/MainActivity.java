@@ -13,6 +13,9 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.bluetooth.BluetoothAdapter;
+import android.view.KeyEvent;
+import org.json.JSONObject;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -47,10 +50,12 @@ public class MainActivity extends Activity {
     private static final String BASE = "https://" + HOST + "/remote/index.html";
     private static final int REQ_CAMERA = 1;
     private static final int REQ_FILES = 2;
+    private static final int REQ_BT = 4;
 
     private WebView web;
     private PermissionRequest pendingPermission;
     private ValueCallback<Uri[]> pendingFiles;
+    private Clicker clicker;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -221,6 +226,13 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        if (code == REQ_BT) {
+            boolean all = results.length > 0;
+            for (int r : results) all &= r == PackageManager.PERMISSION_GRANTED;
+            if (all) clicker().start();
+            else clicker().set("denied");
+            return;
+        }
         if (code != REQ_CAMERA || pendingPermission == null) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
             pendingPermission.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
@@ -248,6 +260,47 @@ public class MainActivity extends Activity {
         }
         pendingFiles.onReceiveValue(uris);
         pendingFiles = null;
+    }
+
+    // ---------- Bluetooth clicker (Proposal 14) ----------
+
+    private Clicker clicker() {
+        if (clicker == null) {
+            clicker = new Clicker(this, json -> web.evaluateJavascript(
+                    "window.wmClicker && window.wmClicker(" + JSONObject.quote(json) + ")", null));
+        }
+        return clicker;
+    }
+
+    private boolean clickerOk() {
+        return Build.VERSION.SDK_INT >= 28 && Clicker.supported(this);
+    }
+
+    /** Android 12+ asks for "Nearby devices" before any Bluetooth call. */
+    private boolean btAllowed() {
+        return Build.VERSION.SDK_INT < 31
+                || (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED);
+    }
+
+    /** While the clicker is connected, volume up is next and volume down previous. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        int k = e.getKeyCode();
+        if (clicker != null && clicker.connected()
+                && (k == KeyEvent.KEYCODE_VOLUME_UP || k == KeyEvent.KEYCODE_VOLUME_DOWN)) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                clicker.key(k == KeyEvent.KEYCODE_VOLUME_UP ? "next" : "prev");
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (clicker != null) clicker.stop();
+        super.onDestroy();
     }
 
     /**
@@ -321,6 +374,62 @@ public class MainActivity extends Activity {
             final String msg = ok ? getString(R.string.saved, name) : getString(R.string.save_failed);
             runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show());
             return ok;
+        }
+
+        @JavascriptInterface
+        public boolean clickerSupported() {
+            return clickerOk();
+        }
+
+        @JavascriptInterface
+        public void clickerStart() {
+            runOnUiThread(() -> {
+                if (!clickerOk()) return;
+                if (btAllowed()) clicker().start();
+                else requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_ADVERTISE}, REQ_BT);
+            });
+        }
+
+        @JavascriptInterface
+        public String clickerHosts() {
+            if (!clickerOk() || !btAllowed()) return "[]";
+            return clicker().hosts();
+        }
+
+        @JavascriptInterface
+        public void clickerConnect(String address) {
+            runOnUiThread(() -> {
+                if (clickerOk() && btAllowed()) clicker().connect(address);
+            });
+        }
+
+        @JavascriptInterface
+        public void clickerKey(String name) {
+            runOnUiThread(() -> {
+                if (clicker != null && btAllowed()) clicker.key(name);
+            });
+        }
+
+        /** Lets the computer find the phone for the first pairing. */
+        @JavascriptInterface
+        public void clickerVisible() {
+            runOnUiThread(() -> {
+                if (!btAllowed()) return;
+                Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+                i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120);
+                try {
+                    startActivity(i);
+                } catch (ActivityNotFoundException ignored) {
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void clickerStop() {
+            runOnUiThread(() -> {
+                if (clicker != null) clicker.stop();
+            });
         }
 
         @JavascriptInterface
