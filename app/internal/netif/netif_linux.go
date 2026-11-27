@@ -16,6 +16,8 @@ func kindsByIndex() map[int]string {
 			out[ifc.Index] = WiFi
 		case guess(ifc.Name) == Cell:
 			out[ifc.Index] = Cell
+		case guess(ifc.Name) == Bluetooth || exists(filepath.Join(base, "bridge")) && hasBnep(base):
+			out[ifc.Index] = Bluetooth // bnep0, or a pan0 bridge over a bnep link
 		case !exists(filepath.Join(base, "device")):
 			out[ifc.Index] = Other // bridges, docker, veth, VPN tunnels
 		default:
@@ -27,6 +29,12 @@ func kindsByIndex() map[int]string {
 		}
 	}
 	return out
+}
+
+// hasBnep reports whether a bridge holds a Bluetooth network link.
+func hasBnep(base string) bool {
+	m, _ := filepath.Glob(filepath.Join(base, "brif", "bnep*"))
+	return len(m) > 0
 }
 
 func exists(p string) bool {

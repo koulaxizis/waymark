@@ -36,8 +36,10 @@ func kindsByIndex() map[int]string {
 			case ifWWAN, ifWWAN2:
 				k = Cell
 			case ifEthernet:
-				// Hyper-V, VPN and phone tethering adapters also say Ethernet.
-				if g := guess(name); g == Other || g == Cell {
+				// Hyper-V, VPN, phone tethering and Bluetooth network
+				// ("Bluetooth Device (Personal Area Network)") adapters also
+				// say Ethernet.
+				if g := guess(name); g == Other || g == Cell || g == Bluetooth {
 					k = g
 				} else if lower(name, "remote ndis") || lower(name, "rndis") {
 					k = Cell

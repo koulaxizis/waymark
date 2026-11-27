@@ -568,7 +568,7 @@ const isHolder = () => !!(agent?.state?.holder && agent.state.holder.id === agen
 
 function renderTop() {
   if (phase !== "live") { $("topStatus").innerHTML = ""; return; }
-  const via = path ? ` · ${esc(T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay"].includes(path) ? path : "other"))))}` : "";
+  const via = path ? ` · ${esc(T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay", "bluetooth"].includes(path) ? path : "other"))))}` : "";
   $("topStatus").innerHTML = linking
     ? `<span class="status wait">${esc(T("w_back"))}</span>`
     : Date.now() - lastSeen > 3000

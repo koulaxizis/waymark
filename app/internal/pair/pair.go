@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -524,8 +525,15 @@ func (p *Pairing) Paths() []Path {
 	if p.relay != nil {
 		out = append(out, Path{Addr: RelayAddr, Kind: netif.Relay})
 	}
+	// The relay goes before a Bluetooth network, which is slower still.
+	sort.SliceStable(out, func(i, j int) bool { return netif.Rank(out[i].Kind) < netif.Rank(out[j].Kind) })
 	return out
 }
+
+// slow paths are dialled only once every other path has failed or
+// DialTimeout is over, so they never win over a network that is merely slow
+// to answer.
+func slow(kind string) bool { return kind == netif.Relay || kind == netif.Bluetooth }
 
 func (p *Pairing) relayCfg() *relay.Config {
 	p.mu.Lock()
@@ -645,9 +653,9 @@ func ResumeOver(p *Pairing, paths []Path) (*secure.Conn, Path, error) {
 }
 
 // dialBest dials every path at once and keeps the best one that answers,
-// waiting PreferWait after the first answer for a better one. The relay is
-// dialled only once every network path has failed or DialTimeout is over,
-// so it never wins over a network that is merely slow.
+// waiting PreferWait after the first answer for a better one. The relay and
+// Bluetooth are dialled only once every other path has failed or
+// DialTimeout is over (see slow).
 func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	type res struct {
 		c net.Conn
@@ -657,7 +665,7 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	ch := make(chan res, len(paths))
 	locals := 0
 	for _, pt := range paths {
-		if pt.Kind != netif.Relay {
+		if !slow(pt.Kind) {
 			locals++
 		}
 	}
@@ -675,11 +683,13 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 	}
 	for i, pt := range paths {
 		go func(i int, pt Path) {
-			if pt.Kind == netif.Relay {
+			if slow(pt.Kind) {
 				select {
 				case <-localsFailed:
 				case <-time.After(DialTimeout):
 				}
+			}
+			if pt.Kind == netif.Relay {
 				if rc == nil {
 					ch <- res{nil, i, errors.New("relay not set")}
 					return
@@ -689,7 +699,7 @@ func dialBest(paths []Path, rc *relay.Config) (net.Conn, int, error) {
 				return
 			}
 			c, err := net.DialTimeout("tcp4", pt.Addr, DialTimeout)
-			if err != nil {
+			if err != nil && !slow(pt.Kind) {
 				failed()
 			}
 			ch <- res{c, i, err}

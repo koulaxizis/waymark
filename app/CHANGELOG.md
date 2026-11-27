@@ -4,6 +4,7 @@ All notable changes to Waymark Remote. Versions follow `MAJOR.MINOR.PATCH`.
 
 ## 0.1.2 (unreleased)
 
+- Bluetooth as the last way (Proposal 14): when a phone shares its connection over Bluetooth and the computer joins it, Waymark takes that network as a Bluetooth path. The order is cable, Wi-Fi, mobile data, relay, Bluetooth; Bluetooth is tried only when the others fail, and the link moves back as soon as a better path answers. Both ends show "over Bluetooth".
 - The update check asks first: on the first start the app asks whether to look for new stable versions, because the check sends one request to GitHub, which sees the IP address. Until the answer, and after a no, nothing is sent. Settings keeps the switch. Earlier versions had it on without asking; they are asked once too (compliance audit 2026-11-23, proposal 5).
 
 ## 0.1.1 (unreleased)
