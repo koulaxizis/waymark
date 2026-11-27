@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/koulaxizis/waymark/app/internal/btlink"
 	"github.com/koulaxizis/waymark/app/internal/netif"
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/proto"
@@ -151,6 +152,9 @@ func New(name string, role proto.Role, ui UI) (*Controller, error) {
 			ui.Log("relay ready")
 		}
 	}
+	if bt := l.BT(); bt != "" {
+		ui.Log("Bluetooth link ready (%s); paired computers can use it when no network answers", bt)
+	}
 	go c.accept()
 	go c.pinger()
 	return c, nil
@@ -224,8 +228,11 @@ func (c *Controller) accept() {
 }
 
 func pathOf(conn *secure.Conn) string {
-	if conn.LocalAddr().Network() == "relay" {
+	switch conn.LocalAddr().Network() {
+	case "relay":
 		return netif.Relay
+	case btlink.Network:
+		return netif.Bluetooth
 	}
 	if ta, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 		return netif.KindOf(ta.IP)
