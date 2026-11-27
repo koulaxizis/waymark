@@ -69,6 +69,36 @@
       <div class="row end"><button id="btnPaste" class="btn" type="button" data-i18n="w_continue"></button></div>
       <div id="startMsg" class="msg err" hidden></div>
     </div>
+    <div class="card" id="clickerCard" hidden>
+      <h3 data-i18n="c_title"></h3>
+      <p class="small muted" data-i18n="c_lead"></p>
+      <div class="row"><button id="btnClicker" class="btn" type="button" data-i18n="c_open"></button></div>
+    </div>
+  </section>
+
+  <!-- Bluetooth clicker (Android app only) -->
+  <section id="sClicker" hidden>
+    <div class="card">
+      <h2 data-i18n="c_title"></h2>
+      <div id="clState" class="msg info" hidden></div>
+      <div id="clSetup" style="margin-top:12px">
+        <label class="field"><span data-i18n="c_host"></span><select id="clHost"></select></label>
+        <div class="row">
+          <button id="clConnect" class="btn primary" type="button" data-i18n="connectBtn" disabled></button>
+          <button id="clVisible" class="btn" type="button" data-i18n="c_visible"></button>
+        </div>
+        <p class="small muted" data-i18n="c_pairHint"></p>
+      </div>
+      <div id="clPad" class="pad" hidden style="margin-top:12px">
+        <button class="btn big" id="clPrev" type="button" data-i18n="prev"></button>
+        <button class="btn big primary" id="clNext" type="button" data-i18n="next"></button>
+        <button class="btn" id="clStart" type="button" data-i18n="startShow"></button>
+        <button class="btn" id="clBlack" type="button" data-i18n="black"></button>
+        <div class="row wide"><span style="flex:1"></span><button class="btn" id="clEnd" type="button" data-i18n="endShow"></button></div>
+        <p class="small muted wide" data-i18n="c_volHint"></p>
+      </div>
+      <div class="row end" style="margin-top:12px"><button id="clBack" class="btn ghost" type="button" data-i18n="c_back"></button></div>
+    </div>
   </section>
 
   <!-- 2. QR read: name and role -->

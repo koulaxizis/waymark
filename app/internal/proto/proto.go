@@ -167,6 +167,9 @@ type AddrsData struct {
 	// Relay is the Controller's relay, when it has one set: the Agent tries
 	// it when no address answers.
 	Relay *relay.Config `json:"relay,omitempty"`
+	// BT is the Controller's Bluetooth link ("AA:BB:CC:DD:EE:FF/5", see
+	// btlink), when it has an adapter: the last path (Proposal 14).
+	BT string `json:"bt,omitempty"`
 }
 
 // State is what the Agent reports on every change and every 5 s.

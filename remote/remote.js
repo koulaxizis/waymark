@@ -53,7 +53,7 @@ function crockford(v, n) {
 }
 
 function show(id) {
-  for (const s of ["sStart", "sSetup", "sCode", "sSas", "sLive", "sEnd"]) $(s).hidden = s !== id;
+  for (const s of ["sStart", "sSetup", "sCode", "sSas", "sLive", "sEnd", "sClicker"]) $(s).hidden = s !== id;
 }
 function msg(id, text, kind = "err") {
   const m = $(id);
@@ -568,7 +568,7 @@ const isHolder = () => !!(agent?.state?.holder && agent.state.holder.id === agen
 
 function renderTop() {
   if (phase !== "live") { $("topStatus").innerHTML = ""; return; }
-  const via = path ? ` · ${esc(T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay"].includes(path) ? path : "other"))))}` : "";
+  const via = path ? ` · ${esc(T("pathNote", T("path_" + (["wired", "wifi", "cell", "relay", "bluetooth"].includes(path) ? path : "other"))))}` : "";
   $("topStatus").innerHTML = linking
     ? `<span class="status wait">${esc(T("w_back"))}</span>`
     : Date.now() - lastSeen > 3000
@@ -922,9 +922,80 @@ function restart() {
   show("sStart");
 }
 
+// ---------- Bluetooth clicker (Android app only, Proposal 14) ----------
+// The phone becomes a Bluetooth keyboard: Page Down / Page Up work in every
+// presentation program, so no Agent is involved and nothing goes over the
+// network.
+const droid = () => window.WaymarkAndroid;
+function clickerSupported() {
+  try { return !!droid()?.clickerSupported?.(); } catch { return false; }
+}
+function clickerHosts() {
+  let list = [];
+  try { list = JSON.parse(droid().clickerHosts()); } catch {}
+  const sel = $("clHost");
+  const keep = sel.value;
+  sel.textContent = "";
+  for (const h of list) {
+    const o = document.createElement("option");
+    o.value = h.a;
+    o.textContent = h.n || h.a;
+    sel.append(o);
+  }
+  if (!list.length) {
+    const o = document.createElement("option");
+    o.textContent = T("c_noHosts");
+    o.disabled = true;
+    sel.append(o);
+  } else if (list.some((h) => h.a === keep)) sel.value = keep;
+  else if (store.get("clicker")) sel.value = store.get("clicker");
+  return list.length;
+}
+let clickerState = "off";
+window.wmClicker = (json) => {
+  let s;
+  try { s = JSON.parse(json); } catch { return; }
+  clickerState = s.state;
+  const bad = ["unsupported", "btoff", "denied"].includes(s.state);
+  msg("clState", T("c_st_" + s.state, s.host || ""), s.state === "connected" ? "ok" : bad ? "err" : "info");
+  $("clPad").hidden = s.state !== "connected";
+  $("clSetup").hidden = s.state === "connected" || s.state === "unsupported";
+  const n = s.state === "ready" ? clickerHosts() : 0;
+  $("clConnect").disabled = s.state !== "ready" || !n;
+  try { droid()?.keepAwake(s.state === "connected"); } catch {}
+};
+function openClicker() {
+  show("sClicker");
+  msg("clState", T("c_st_starting"), "info");
+  clickerHosts();
+  droid().clickerStart();
+}
+function initClicker() {
+  if (!clickerSupported()) return;
+  $("clickerCard").hidden = false;
+  $("btnClicker").onclick = openClicker;
+  $("clConnect").onclick = () => {
+    store.set("clicker", $("clHost").value);
+    droid().clickerConnect($("clHost").value);
+  };
+  $("clVisible").onclick = () => droid().clickerVisible();
+  const key = (k) => () => droid().clickerKey(k);
+  $("clNext").onclick = key("next");
+  $("clPrev").onclick = key("prev");
+  $("clBlack").onclick = key("black");
+  $("clStart").onclick = key("start");
+  $("clEnd").onclick = key("end");
+  $("clBack").onclick = () => { droid().clickerStop(); show("sStart"); };
+  // Back from Android's Bluetooth settings: the list may have a new computer.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && clickerState === "ready") window.wmClicker(JSON.stringify({ state: "ready" }));
+  });
+}
+
 // ---------- boot ----------
 function boot() {
   initChrome();
+  initClicker();
   $("btnScan").onclick = () => scan().catch((e) => msg("startMsg", e.message));
   $("btnPaste").onclick = () => takeQR($("pasteBox").value);
   $("btnSetup").onclick = () => prepare().catch((e) => msg("codeMsg", e.message));

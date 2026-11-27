@@ -323,7 +323,7 @@ func (a *App) watchOperatorFolders() {
 					}
 					l[rel] = rec
 					b, _ := json.MarshalIndent(l, "", " ")
-					os.WriteFile(ledgerPath, b, 0o644)
+					os.WriteFile(ledgerPath, b, 0o600)
 					mu.Unlock()
 					a.emit("ctrl:refresh", agentID)
 				}(ag.ID, p, rel, now)

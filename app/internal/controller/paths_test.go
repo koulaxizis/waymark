@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/koulaxizis/waymark/app/internal/agent"
+	"github.com/koulaxizis/waymark/app/internal/btlink"
 	"github.com/koulaxizis/waymark/app/internal/pair"
 	"github.com/koulaxizis/waymark/app/internal/proto"
 	"github.com/koulaxizis/waymark/app/internal/relay"
@@ -248,5 +249,101 @@ func TestRelayFailover(t *testing.T) {
 	defer fd.mu.Unlock()
 	if fd.slide != 5 {
 		t.Fatalf("slide %d, want 5", fd.slide)
+	}
+}
+
+// btConn is a loopback connection that says it is a Bluetooth link.
+type btConn struct {
+	net.Conn
+	local net.Addr
+}
+
+func (c btConn) LocalAddr() net.Addr { return c.local }
+
+type btListener struct {
+	net.Listener
+	addr btlink.Addr
+}
+
+func (l btListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return btConn{c, l.addr}, nil
+}
+
+// TestBluetoothFailover pulls the cable: the link goes over the Controller's
+// Bluetooth link (a loopback stand-in here, as CI has no adapter) and comes
+// back to the cable once it is plugged in again (Proposal 14, point 2).
+func TestBluetoothFailover(t *testing.T) {
+	fastUpgrade()
+	l, err := net.Listen("tcp4", "127.0.0.2:0")
+	if err != nil {
+		t.Skip("no 127.0.0.2:", err)
+	}
+	pport := l.Addr().(*net.TCPAddr).Port
+	l.Close()
+	pair.ListAddrs = func(int) proto.AddrsData {
+		return proto.AddrsData{Port: pport, Addrs: []proto.Addr{{IP: "127.0.0.2", Kind: "wired"}}}
+	}
+	bl, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	btAddr := btlink.Addr{MAC: [6]byte{2, 0, 0, 0, 0, 1}, Channel: 3}
+	var dialled []string
+	var dmu sync.Mutex
+	oldListen, oldDial := pair.BTListen, pair.DialBT
+	pair.BTListen = func() (net.Listener, btlink.Addr, error) { return btListener{bl, btAddr}, btAddr, nil }
+	pair.DialBT = func(addr string, d time.Duration) (net.Conn, error) {
+		dmu.Lock()
+		dialled = append(dialled, addr)
+		dmu.Unlock()
+		return net.DialTimeout("tcp4", bl.Addr().String(), d)
+	}
+	t.Cleanup(func() { pair.BTListen, pair.DialBT = oldListen, oldDial })
+
+	a, c, fd, id, _ := setup(t, proto.RoleOperator, "")
+	target := "127.0.0.1:" + strconv.Itoa(portOf(t, c))
+	wired := newPath(t, "127.0.0.2", pport, target)
+	waitFor(t, "the move to the cable", 5*time.Second, func() bool { return agentPath(a) == "wired" })
+	time.Sleep(1200 * time.Millisecond)
+	if err := c.Take(id); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(a.Store().Root(), "talk.pdf"), []byte("%PDF-1.4"), 0o644)
+	if _, err := c.Call(id, proto.CmdPresOpen, proto.OpenArgs{Path: "talk.pdf"}); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	dmu.Lock()
+	if len(dialled) != 0 {
+		t.Errorf("Bluetooth dialled while the cable worked: %v", dialled)
+	}
+	dmu.Unlock()
+
+	wired.cut()
+	if _, err := c.Call(id, proto.CmdPresNext, nil); err != nil {
+		t.Fatalf("next across the failover: %v", err)
+	}
+	waitFor(t, "Bluetooth", 8*time.Second, func() bool { return agentPath(a) == "bluetooth" })
+	if p := c.Agents()[0].Path; p != "bluetooth" {
+		t.Errorf("controller shows path %q, want bluetooth", p)
+	}
+	dmu.Lock()
+	if len(dialled) == 0 || dialled[0] != btAddr.String() {
+		t.Errorf("dialled %v, want %s", dialled, btAddr)
+	}
+	dmu.Unlock()
+
+	wired.up()
+	waitFor(t, "the move back to the cable", 5*time.Second, func() bool { return agentPath(a) == "wired" })
+	if _, err := c.Call(id, proto.CmdPresNext, nil); err != nil {
+		t.Fatal(err)
+	}
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	if fd.slide < 2 {
+		t.Fatalf("slide %d after two Next", fd.slide)
 	}
 }

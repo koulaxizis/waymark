@@ -100,7 +100,12 @@ func (a *App) AnswerUpdateQuestion(yes bool) error {
 
 func (a *App) save() error {
 	b, _ := json.MarshalIndent(a.cfg, "", "  ")
-	return os.WriteFile(a.path, b, 0o644)
+	// 0600: the file may hold the relay access key. Windows ignores the
+	// mode; the Settings text tells the user to keep the folder private.
+	if err := os.WriteFile(a.path, b, 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(a.path, 0o600) // also for a file an older version wrote as 0644
 }
 
 func (a *App) emit(name string, data any) {
