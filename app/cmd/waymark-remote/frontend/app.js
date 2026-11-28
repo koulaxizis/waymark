@@ -127,6 +127,10 @@ function showUpdate(u) {
   }
 }
 $("btnUpdate").onclick = () => pendingUpdate && go().OpenURL(pendingUpdate.url);
+$("lnkPrivacy").onclick = (e) => {
+  e.preventDefault();
+  go().OpenURL("https://waymarked.site/privacy/" + (lang() === "el" ? "?lang=el" : ""));
+};
 $("btnUpdateLater").onclick = () => { $("updateBanner").hidden = true; };
 
 let refreshLabels = () => {};

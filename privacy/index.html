@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waymark privacy</title>
+<meta name="description" content="What Waymark sends and what it keeps: no accounts, no cookies, no analytics. The few times data leaves your device, and your rights.">
+<meta name="robots" content="index, follow">
+<meta name="author" content="Christos Koulaxizis">
+<meta name="theme-color" content="#090e0e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f6f5" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+<link rel="canonical" href="https://waymarked.site/privacy/">
+<link rel="alternate" hreflang="en" href="https://waymarked.site/privacy/">
+<link rel="alternate" hreflang="el" href="https://waymarked.site/privacy/?lang=el">
+<link rel="alternate" hreflang="x-default" href="https://waymarked.site/privacy/">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/palette.css">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Waymark">
+<meta property="og:title" content="Waymark privacy">
+<meta property="og:description" content="No accounts, no cookies, no analytics. The few times data leaves your device, and what happens then.">
+<meta property="og:url" content="https://waymarked.site/privacy/">
+<meta property="og:image" content="https://waymarked.site/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="el_GR">
+
+<script>
+  /* Runs before first paint so the chosen language and theme never flash. */
+  (function () {
+    var d = document.documentElement, lang = null, theme = null;
+    try {
+      var q = new URLSearchParams(location.search).get('lang');
+      lang = (q === 'el' || q === 'en') ? q : localStorage.getItem('waymark-lang');
+      theme = localStorage.getItem('waymark-theme');
+    } catch (e) {}
+    if (lang === 'el') d.lang = 'el';
+    if (theme === 'light' || theme === 'dark') d.dataset.theme = theme;
+  })();
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+  a { color: var(--primary); }
+  a:hover { color: var(--primary-hover); }
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+  /* Bilingual: every string exists twice; the page language decides which one shows. */
+  html[lang="en"] [lang="el"],
+  html[lang="el"] [lang="en"] { display: none !important; }
+
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1rem; }
+  @media (min-width: 40rem) { .wrap { padding: 0 1.5rem; } }
+
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; padding-bottom: 1rem; }
+  .brand { display: flex; align-items: center; gap: .625rem; font-weight: 700; font-size: 1.125rem; letter-spacing: .01em; color: var(--text); text-decoration: none; }
+  .brand:hover { color: var(--text); }
+  .brand svg { width: 2rem; height: 2rem; flex: none; }
+  .controls { display: flex; gap: .5rem; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .375rem;
+    min-height: 2.75rem; padding: 0 .875rem;
+    font: inherit; font-size: .9375rem; color: var(--text); text-decoration: none;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: .625rem;
+    cursor: pointer; touch-action: manipulation;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .btn:hover { background: var(--surface-raised); color: var(--text); }
+  .btn svg { width: 1.125rem; height: 1.125rem; }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; padding: 0 1.25rem; }
+  .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-primary); }
+  .icon-sun { display: none; }
+  html[data-theme="dark"] .icon-sun { display: block; }
+  html[data-theme="dark"] .icon-moon { display: none; }
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme]) .icon-sun, html[data-theme="light"] .icon-sun { display: none; }
+    html:not([data-theme]) .icon-moon { display: block; }
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme]) .icon-sun { display: block; }
+    html:not([data-theme]) .icon-moon { display: none; }
+  }
+
+  .hero { padding-top: 3rem; padding-bottom: 2.5rem; }
+  @media (min-width: 48rem) { .hero { padding-top: 4.5rem; padding-bottom: 3.5rem; } }
+  h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw + .5rem, 3.25rem); line-height: 1.1; letter-spacing: -.02em; text-wrap: balance; }
+  h1 .accent { color: var(--primary); }
+  .lede { max-width: 40rem; margin: 0; font-size: 1.1875rem; color: var(--text-secondary); text-wrap: pretty; }
+
+  section { padding: 2.75rem 0; border-top: 1px solid var(--border); }
+  .eyebrow { margin: 0 0 .5rem; font-size: .8125rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); }
+  html[lang="el"] .eyebrow { text-transform: none; letter-spacing: .02em; font-size: .875rem; }
+  h2 { margin: 0 0 .75rem; font-size: clamp(1.5rem, 2.5vw + .75rem, 2rem); line-height: 1.2; letter-spacing: -.01em; }
+  p { margin: 0 0 1rem; }
+  .intro { max-width: 42rem; color: var(--text-secondary); }
+  .note { margin: 1rem 0 0; font-size: .9375rem; color: var(--text-tertiary); max-width: 42rem; }
+
+
+
+
+  .prose { max-width: 42rem; }
+  .prose h3 { margin: 1.75rem 0 .5rem; font-size: 1.1875rem; line-height: 1.3; }
+  .prose ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+  .prose li { margin: 0 0 .5rem; }
+  .prose code { font-size: .9375em; padding: .05em .3em; border-radius: .25rem; background: var(--surface-raised); }
+  .updated { margin: 1rem 0 0; font-size: .9375rem; color: var(--text-tertiary); }
+  .todo { padding: .05em .3em; border-radius: .25rem; background: var(--surface-raised); outline: 1px dashed var(--border-strong); }
+  footer { padding: 2.5rem 0 3rem; border-top: 1px solid var(--border); color: var(--text-tertiary); font-size: .9375rem; }
+  footer p { margin: 0 0 .375rem; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="wrap bar">
+  <a class="brand" href="/" aria-label="Waymark">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r="30" fill="var(--primary)"/>
+      <path d="M32 14C24 14 18 20 18 28c0 10 14 24 14 24s14-14 14-24c0-8-6-14-14-14z" fill="none" stroke="var(--on-primary)" stroke-width="3.5" stroke-linejoin="round"/>
+      <circle cx="32" cy="28" r="4.5" fill="var(--on-primary)"/>
+    </svg>
+    <span>Waymark</span>
+  </a>
+  <div class="controls">
+    <button class="btn" type="button" id="lang-toggle">
+      <span lang="en">Ελληνικά</span><span lang="el">English</span>
+    </button>
+    <button class="btn" type="button" id="theme-toggle">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <span lang="en">Theme</span><span lang="el">Θέμα</span>
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <h1>
+      <span lang="en"><span class="accent">Privacy</span></span>
+      <span lang="el"><span class="accent">Απόρρητο</span></span>
+    </h1>
+    <p class="lede">
+      <span lang="en">Waymark is free, open-source software (MIT). Its tools run on your own devices and talk to each other over your own network. <strong>We have no servers that receive your presentations, files or settings, no accounts, no cookies, no analytics and no ads.</strong> This page lists the few times something does leave your device, and what happens then.</span>
+      <span lang="el">Το Waymark είναι δωρεάν λογισμικό ανοιχτού κώδικα (MIT). Τα εργαλεία του τρέχουν στις δικές σου συσκευές και μιλούν μεταξύ τους στο δικό σου δίκτυο. <strong>Δεν έχουμε servers που λαμβάνουν παρουσιάσεις, αρχεία ή ρυθμίσεις σου, ούτε λογαριασμούς, cookies, στατιστικά ή διαφημίσεις.</strong> Εδώ γράφουμε τις λίγες φορές που κάτι βγαίνει από τη συσκευή σου, και τι γίνεται τότε.</span>
+    </p>
+    <p class="updated"><span lang="en">Last updated: 28 November 2026</span><span lang="el">Τελευταία ενημέρωση: 28 Νοεμβρίου 2026</span></p>
+  </div>
+
+  <section id="controller" aria-labelledby="h-controller">
+    <div class="wrap prose">
+      <h2 id="h-controller"><span lang="en">Who is responsible</span><span lang="el">Ποιος είναι υπεύθυνος</span></h2>
+      <p>
+        <span lang="en">Christos Koulaxizis, Ανεξάρτητες Εκδόσεις Γλαρόλυκοι (Glarolykoi Independent Publishing, sole proprietorship), Δεξαμενής 3, 133 41 Άνω Λιόσια, Greece. VAT no. (ΑΦΜ) 122245588, tax office ΚΕΦΟΔΕ Αττικής, GEMI no. 159901103000. Contact: <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a>. Christos Koulaxizis designs and maintains Waymark.</span>
+        <span lang="el">Χρήστος Κουλαξίζης, Ανεξάρτητες Εκδόσεις Γλαρόλυκοι (ατομική επιχείρηση), Δεξαμενής 3, 133 41 Άνω Λιόσια. ΑΦΜ 122245588, ΔΟΥ ΚΕΦΟΔΕ Αττικής, ΓΕΜΗ 159901103000. Επικοινωνία: <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a>. Το Waymark το σχεδιάζει και το συντηρεί ο Χρήστος Κουλαξίζης.</span>
+      </p>
+    </div>
+  </section>
+
+  <section id="site" aria-labelledby="h-site">
+    <div class="wrap prose">
+      <h2 id="h-site"><span lang="en">The website waymarked.site</span><span lang="el">Το site waymarked.site</span></h2>
+      <ul>
+        <li>
+          <span lang="en"><strong>Hosting.</strong> The site is served by GitHub Pages (GitHub, Inc., USA). Like every web host, GitHub sees your IP address and browser details when you open a page, and keeps them in its server logs for security, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">its own privacy statement</a>. We do not receive these logs.</span>
+          <span lang="el"><strong>Φιλοξενία.</strong> Το site σερβίρεται από το GitHub Pages (GitHub, Inc., ΗΠΑ). Όπως κάθε πάροχος φιλοξενίας, το GitHub βλέπει τη διεύθυνση IP και τον browser σου όταν ανοίγεις μια σελίδα και τα κρατά στα log του για λόγους ασφαλείας, σύμφωνα με τη <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">δική του πολιτική</a>. Εμείς δεν λαμβάνουμε αυτά τα log.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>No cookies, no tracking.</strong> The site stores only your language and theme choice in your browser (localStorage), so the next page opens the same way. The browser Controller at /remote/ also stores its pairing there, so it can reconnect. None of this is sent anywhere. You can delete it by clearing the site's data in your browser.</span>
+          <span lang="el"><strong>Χωρίς cookies και tracking.</strong> Το site κρατά μόνο τη γλώσσα και το θέμα που διάλεξες στον browser σου (localStorage). Ο Controller στο /remote/ κρατά εκεί και τη σύζευξη, για να ξανασυνδεθεί. Τίποτα από αυτά δεν στέλνεται πουθενά. Τα σβήνεις καθαρίζοντας τα δεδομένα του site στον browser.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>No third-party requests.</strong> The pages load nothing from other sites. The download count is written into the page once a day by us, not fetched by your browser.</span>
+          <span lang="el"><strong>Κανένα αίτημα σε τρίτους.</strong> Οι σελίδες δεν φορτώνουν τίποτα από άλλα sites. Τον αριθμό λήψεων τον γράφουμε εμείς στη σελίδα μία φορά τη μέρα· δεν τον ζητά ο browser σου.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>Links.</strong> Links to the Glarolykoi shop (merch), Viva (donations), koulaxizis.gr and GitHub take you to those sites, which have their own privacy policies.</span>
+          <span lang="el"><strong>Σύνδεσμοι.</strong> Οι σύνδεσμοι προς το κατάστημα των Γλαρόλυκων (merch), τη Viva (δωρεές), το koulaxizis.gr και το GitHub σε πηγαίνουν σε sites με δικές τους πολιτικές απορρήτου.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="donations" aria-labelledby="h-donations">
+    <div class="wrap prose">
+      <h2 id="h-donations"><span lang="en">Donations</span><span lang="el">Δωρεές</span></h2>
+      <p>
+        <span lang="en">Donations are paid on Viva's secure page. Viva processes your card details; we never see them. We receive your name, email address, the amount and the date, and keep them for as long as Greek tax law requires, then delete them. Legal basis: the donation itself and our tax obligations (GDPR art. 6(1)(b) and (c)).</span>
+        <span lang="el">Οι δωρεές πληρώνονται στην ασφαλή σελίδα της Viva. Η Viva επεξεργάζεται τα στοιχεία της κάρτας· εμείς δεν τα βλέπουμε ποτέ. Λαμβάνουμε όνομα, email, ποσό και ημερομηνία, τα κρατάμε όσο ορίζει η ελληνική φορολογική νομοθεσία και μετά τα σβήνουμε. Νομική βάση: η ίδια η δωρεά και οι φορολογικές μας υποχρεώσεις (άρθρο 6(1)(β) και (γ) GDPR).</span>
+      </p>
+    </div>
+  </section>
+
+  <section id="remote" aria-labelledby="h-remote">
+    <div class="wrap prose">
+      <h2 id="h-remote"><span lang="en">The Waymark Remote app (Windows, macOS, Linux)</span><span lang="el">Η εφαρμογή Waymark Remote (Windows, macOS, Linux)</span></h2>
+      <ul>
+        <li>
+          <span lang="en"><strong>Everything stays between your devices.</strong> Presentations, files and commands go directly between your computers, over cable, Wi-Fi, mobile data or Bluetooth, encrypted (AES-256-GCM). We never see them.</span>
+          <span lang="el"><strong>Όλα μένουν ανάμεσα στις συσκευές σου.</strong> Παρουσιάσεις, αρχεία και εντολές πηγαίνουν απευθείας ανάμεσα στους υπολογιστές σου, με καλώδιο, Wi-Fi, δεδομένα κινητής ή Bluetooth, κρυπτογραφημένα (AES-256-GCM). Εμείς δεν τα βλέπουμε ποτέ.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>Update check (off until you say yes).</strong> On the first start the app asks whether to look for new stable versions. If you say yes, it sends one request to GitHub's public API each time it starts. GitHub sees your IP address and that the request comes from "Waymark"; nothing else about you or your device is sent. Turn it off any time in Settings.</span>
+          <span lang="el"><strong>Έλεγχος ενημερώσεων (κλειστός μέχρι να πεις ναι).</strong> Στο πρώτο άνοιγμα η εφαρμογή ρωτά αν θέλεις έλεγχο για νέες σταθερές εκδόσεις. Αν πεις ναι, στέλνει ένα αίτημα στο δημόσιο API του GitHub κάθε φορά που ανοίγει. Το GitHub βλέπει τη διεύθυνση IP σου και ότι το αίτημα έρχεται από το «Waymark»· τίποτα άλλο για σένα ή τη συσκευή σου. Τον κλείνεις όποτε θέλεις από τις Ρυθμίσεις.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>Relay (off unless you set one).</strong> If you set a relay in Settings, two computers that share no network can reach each other through it, over the internet. The relay sees only encrypted data, plus the IP addresses of the two computers and the time of the connection. A relay is run by whoever set it up, usually you, on your own Cloudflare account or server; Waymark ships with none.</span>
+          <span lang="el"><strong>Relay (κλειστό αν δεν ορίσεις ένα).</strong> Αν ορίσεις relay στις Ρυθμίσεις, δύο υπολογιστές χωρίς κοινό δίκτυο βρίσκονται μέσω αυτού στο internet. Το relay βλέπει μόνο κρυπτογραφημένα δεδομένα, τις διευθύνσεις IP των δύο υπολογιστών και την ώρα σύνδεσης. Το relay το τρέχει όποιος το έστησε, συνήθως εσύ, στον δικό σου λογαριασμό Cloudflare ή server· το Waymark δεν έρχεται με κανένα.</span>
+        </li>
+        <li>
+          <span lang="en"><strong>What the app keeps on your computer.</strong> Settings (<code>waymark-remote.json</code>, next to the app, or in your user settings folder when the app's folder is read-only), the files you send to the Agent, and an on-screen log that is cleared when the app closes. When it closes, the app offers to delete the files it received. Deleting the folder removes everything.</span>
+          <span lang="el"><strong>Τι κρατά η εφαρμογή στον υπολογιστή σου.</strong> Ρυθμίσεις (<code>waymark-remote.json</code>, δίπλα στην εφαρμογή, ή στον φάκελο ρυθμίσεων του χρήστη όταν ο φάκελος της εφαρμογής είναι μόνο για ανάγνωση), τα αρχεία που στέλνεις στον Agent, και ένα log στην οθόνη που σβήνεται όταν κλείσει η εφαρμογή. Όταν κλείνει, η εφαρμογή προτείνει να σβηστούν τα αρχεία που πήρε. Αν σβήσεις τον φάκελο, φεύγουν όλα.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="android" aria-labelledby="h-android">
+    <div class="wrap prose">
+      <h2 id="h-android"><span lang="en">The Android app (site.waymarked.app)</span><span lang="el">Η εφαρμογή Android (site.waymarked.app)</span></h2>
+      <p>
+        <span lang="en">The app is the browser Controller packed in an APK. It loads nothing from the internet and talks only to Waymark on your local network. It asks for the camera to read the QR code; no picture leaves the phone. If you use the slide clicker, it asks for Bluetooth and acts as a Bluetooth keyboard paired with your presentation computer, sending only key presses (next, previous, black screen). Files you download go to Downloads/Waymark. It has no analytics and is excluded from cloud backup. It is distributed through Koulaxizis Apps, F-Droid clients and Obtainium, which have their own policies.</span>
+        <span lang="el">Η εφαρμογή είναι ο Controller του browser μέσα σε APK. Δεν φορτώνει τίποτα από το internet και μιλά μόνο με το Waymark στο τοπικό σου δίκτυο. Ζητά την κάμερα για να διαβάσει το QR· καμία εικόνα δεν φεύγει από το κινητό. Αν χρησιμοποιήσεις το clicker διαφανειών, ζητά το Bluetooth και λειτουργεί σαν πληκτρολόγιο Bluetooth συζευγμένο με τον υπολογιστή της παρουσίασης, στέλνοντας μόνο πατήματα πλήκτρων (επόμενη, προηγούμενη, μαύρη οθόνη). Τα αρχεία που κατεβάζεις πηγαίνουν στο Downloads/Waymark. Δεν έχει στατιστικά και δεν μπαίνει στο cloud backup. Διανέμεται μέσω Koulaxizis Apps, εφαρμογών F-Droid και Obtainium, που έχουν δικές τους πολιτικές.</span>
+      </p>
+    </div>
+  </section>
+
+  <section id="organizers" aria-labelledby="h-organizers">
+    <div class="wrap prose">
+      <h2 id="h-organizers"><span lang="en">For organizers and operators</span><span lang="el">Για διοργανωτές και χειριστές</span></h2>
+      <p>
+        <span lang="en">When you use Waymark at an event, <strong>you</strong> are responsible for the presentations and names that pass through it, not us, because they never reach us. Good practice:</span>
+        <span lang="el">Όταν χρησιμοποιείς το Waymark σε μια εκδήλωση, υπεύθυνος για τις παρουσιάσεις και τα ονόματα που περνούν από αυτό είσαι <strong>εσύ</strong>, όχι εμείς, γιατί δεν φτάνουν ποτέ σε εμάς. Καλή πρακτική:</span>
+      </p>
+      <ul>
+        <li>
+          <span lang="en">Tell speakers that their file goes to the presentation laptop over the local network, and delete received files after the event (the app offers this when it closes).</span>
+          <span lang="el">Ενημέρωσε τους ομιλητές ότι το αρχείο τους πηγαίνει στο laptop παρουσίασης μέσω του τοπικού δικτύου, και σβήσε τα αρχεία μετά την εκδήλωση (η εφαρμογή το προτείνει όταν κλείνει).</span>
+        </li>
+        <li>
+          <span lang="en">Keep the app folder or USB stick private if it holds a relay key.</span>
+          <span lang="el">Κράτα τον φάκελο της εφαρμογής ή το USB μόνο για σένα, αν έχει κλειδί relay.</span>
+        </li>
+        <li>
+          <span lang="en">Future versions with schedules, speaker times or CSV reports will keep them only on your computer, with a delete button and a default of 30 days.</span>
+          <span lang="el">Οι μελλοντικές εκδόσεις με προγράμματα, χρόνους ομιλητών ή αναφορές CSV θα τα κρατούν μόνο στον υπολογιστή σου, με κουμπί διαγραφής και προεπιλογή 30 ημερών.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="rights" aria-labelledby="h-rights">
+    <div class="wrap prose">
+      <h2 id="h-rights"><span lang="en">Your rights</span><span lang="el">Τα δικαιώματά σου</span></h2>
+      <p>
+        <span lang="en">You can ask to see, correct or delete data we hold about you (in practice: donation records and emails you sent us), to object or to restrict processing, by writing to <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a>. We answer within one month. You can also complain to the Hellenic Data Protection Authority (<a href="https://www.dpa.gr/" rel="noopener">dpa.gr</a>).</span>
+        <span lang="el">Μπορείς να ζητήσεις να δεις, να διορθώσεις ή να σβήσεις δεδομένα που κρατάμε για σένα (στην πράξη: στοιχεία δωρεάς και email που μας έστειλες), να αντιταχθείς ή να ζητήσεις περιορισμό, γράφοντας στο <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a>. Απαντάμε μέσα σε ένα μήνα. Μπορείς επίσης να κάνεις καταγγελία στην Αρχή Προστασίας Δεδομένων Προσωπικού Χαρακτήρα (<a href="https://www.dpa.gr/" rel="noopener">dpa.gr</a>).</span>
+      </p>
+      <h3><span lang="en">Security</span><span lang="el">Ασφάλεια</span></h3>
+      <p>
+        <span lang="en">Found a flaw? See <a href="https://github.com/koulaxizis/waymark/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a> to report it privately.</span>
+        <span lang="el">Βρήκες κενό ασφαλείας; Δες το <a href="https://github.com/koulaxizis/waymark/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a> για ιδιωτική αναφορά.</span>
+      </p>
+      <h3><span lang="en">Changes</span><span lang="el">Αλλαγές</span></h3>
+      <p>
+        <span lang="en">We update this page when the tools change what they send. The date at the top shows the last change.</span>
+        <span lang="el">Ενημερώνουμε αυτή τη σελίδα όταν τα εργαλεία αλλάζουν τι στέλνουν. Η ημερομηνία στην κορυφή δείχνει την τελευταία αλλαγή.</span>
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="/"><span lang="en">Waymark home</span><span lang="el">Αρχική Waymark</span></a> · <a href="/support/"><span lang="en">Support Waymark</span><span lang="el">Στήριξε το Waymark</span></a></p>
+    <p><span lang="en">Designed by Christos Koulaxizis</span><span lang="el">Σχεδιασμός: Christos Koulaxizis</span></p>
+    <p><span lang="en">Published by Ανεξάρτητες Εκδόσεις Γλαρόλυκοι (Glarolykoi Independent Publishing) · <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a> · <a href="https://github.com/koulaxizis/waymark/blob/main/SECURITY.md" rel="noopener">Security</a></span><span lang="el">Έκδοση: Ανεξάρτητες Εκδόσεις Γλαρόλυκοι · <a href="mailto:koulaxizis@glarolykoi.net">koulaxizis@glarolykoi.net</a> · <a href="https://github.com/koulaxizis/waymark/blob/main/SECURITY.md" rel="noopener">Ασφάλεια</a></span></p>
+    <p><span lang="en">No cookies · No tracking · Open source (MIT)</span><span lang="el">Χωρίς cookies · Χωρίς tracking · Ανοιχτού κώδικα (MIT)</span></p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var d = document.documentElement;
+    function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+    /* Links and alt texts that differ per language follow the page language. */
+    function sync() {
+      var lang = d.lang === 'el' ? 'el' : 'en';
+      var links = document.querySelectorAll('[data-href-en]');
+      for (var i = 0; i < links.length; i++) links[i].setAttribute('href', links[i].getAttribute('data-href-' + lang));
+      var imgs = document.querySelectorAll('img[data-alt-en]');
+      for (var j = 0; j < imgs.length; j++) imgs[j].setAttribute('alt', imgs[j].getAttribute('data-alt-' + lang));
+      document.title = lang === 'el' ? 'Απόρρητο Waymark' : 'Waymark privacy';
+    }
+    sync();
+
+    document.getElementById('lang-toggle').addEventListener('click', function () {
+      var next = d.lang === 'el' ? 'en' : 'el';
+      d.lang = next;
+      save('waymark-lang', next);
+      sync();
+      try {
+        var u = new URL(location.href);
+        if (next === 'el') u.searchParams.set('lang', 'el'); else u.searchParams.delete('lang');
+        history.replaceState(null, '', u);
+      } catch (e) {}
+    });
+
+    document.getElementById('theme-toggle').addEventListener('click', function () {
+      var current = d.dataset.theme ||
+        (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      var next = current === 'dark' ? 'light' : 'dark';
+      d.dataset.theme = next;
+      save('waymark-theme', next);
+    });
+  })();
+</script>
+</body>
+</html>
